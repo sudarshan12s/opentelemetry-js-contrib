@@ -18,6 +18,7 @@
 
 import * as oracledbTypes from 'oracledb';
 import type * as api from '@opentelemetry/api';
+import { spanConnectionConfig } from './types';
 
 // Captures the context associated with onEnterFn, onExitFn hooks.
 export interface instrumentationContext {
@@ -34,22 +35,6 @@ export interface traceSpanData {
   fn: Function;
   args?: any[];
   userContext: instrumentationContext;
-}
-
-// Captures connection related span data
-export interface spanConnectionConfig {
-  serviceName?: string;
-  connectString?: string;
-  hostName?: string;
-  port?: number;
-  user?: string;
-  protocol?: string;
-  instanceName?: string;
-  serverMode?: string;
-  pdbName?: string;
-  poolMin?: string;
-  poolMax?: string;
-  poolIncrement?: string;
 }
 
 // Captures call level related span data

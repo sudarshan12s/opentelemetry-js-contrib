@@ -39,10 +39,12 @@ import {
   DBSYSTEMVALUES_ORACLE,
 } from '@opentelemetry/semantic-conventions';
 import * as oracledbTypes from 'oracledb';
-import { OracleInstrumentationConfig } from './types';
+import { 
+  OracleInstrumentationConfig,
+  spanConnectionConfig,
+ } from './types';
 import {
   traceSpanData,
-  spanConnectionConfig,
   spanCallLevelConfig,
 } from './internal-types';
 import { SpanNames } from './constants';

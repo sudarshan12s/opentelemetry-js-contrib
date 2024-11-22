@@ -17,9 +17,22 @@
  * */
 import type * as api from '@opentelemetry/api';
 import { InstrumentationConfig } from '@opentelemetry/instrumentation';
-import { spanConnectionConfig } from './internal-types';
 
-export { spanConnectionConfig };
+// Captures connection related span data
+export interface spanConnectionConfig {
+  serviceName?: string;
+  connectString?: string;
+  hostName?: string;
+  port?: number;
+  user?: string;
+  protocol?: string;
+  instanceName?: string;
+  serverMode?: string;
+  pdbName?: string;
+  poolMin?: string;
+  poolMax?: string;
+  poolIncrement?: string;
+}
 
 export interface OracleRequestHookInformation {
   inputArgs: any;
@@ -31,7 +44,7 @@ export interface OracleInstrumentationExecutionRequestHook {
 }
 
 export interface OracleResponseHookInformation {
-  data: any;
+  data: any; // the result of sql execution.
 }
 
 export interface OracleInstrumentationExecutionResponseHook {
