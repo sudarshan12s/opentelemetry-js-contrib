@@ -228,7 +228,7 @@ export class OracleTelemetryTraceHandler extends newmoduleExports.traceHandler
     if (traceContext.error) {
       span.setStatus({
         code: SpanStatusCode.ERROR,
-        message: traceContext.error.message,
+        message: traceContext.error?.message,
       });
     }
   }

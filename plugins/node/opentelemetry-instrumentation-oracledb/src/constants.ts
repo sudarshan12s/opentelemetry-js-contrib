@@ -39,4 +39,10 @@ export enum SpanNames {
   CONNECT_FAST_AUTH = 'oracledb.FastAuthMessage',
   EXECUTE_MSG = 'oracledb.ExecuteMessage',
   EXECUTE = 'oracledb.Connection.execute',
+  EXECUTE_MANY = 'oracledb.Connection.executeMany',
+  LOGOFF_MSG = 'oracledb.LogOffMessage',
+  CONNECT_CLOSE = 'oracledb.Connection.close',
+  CREATE_LOB = 'oracledb.Connection.createLob',
+  LOB_MESSAGE = 'oracledb.LobOpMessage',
+  LOB_GETDATA = 'oracledb.Lob.getData',
 }

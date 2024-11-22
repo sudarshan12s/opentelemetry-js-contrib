@@ -72,9 +72,9 @@ let numExecSpans = 2; // Default number of Spans created for Execute API in thin
 let numConnSpans = 2; // Default number of spans created during connection establishment.
 let poolMinSpanCount = 1; // number of spans created for createPool considering poolMin.
 const CONFIG = {
-  user: process.env.ORACLE_USER || 'otel',
-  password: process.env.ORACLE_PASSWORD || 'secret',
-  connectString: process.env.ORACLE_CONNECTSTRING || 'localhost:1521/FREEPDB1',
+  user: process.env.ORACLE_USER || 'demo',
+  password: process.env.ORACLE_PASSWORD || 'demo',
+  connectString: process.env.ORACLE_CONNECTSTRING || 'localhost:1521/freepdb1',
 };
 const POOL_CONFIG = {
   ...CONFIG,
@@ -139,11 +139,6 @@ const CONN_FAILED_ATTRIBUTES = {
   [SEMATTRS_DB_CONNECTION_STRING]: CONFIG.connectString,
   [SEMATTRS_DB_USER]: CONFIG.user,
 };
-
-const LOB_CREATE_SPAN = 'oracledb.Connection.createLob';
-const LOB_OPERATION_SPAN = 'oracledb.LobOpMessage';
-const LOB_READ_SPAN = 'oracledb.Lob.getData';
-const CONN_EXECUTE_MANY = 'oracledb.Connection.executeMany';
 
 const unsetStatus: SpanStatus = {
   code: SpanStatusCode.UNSET,
@@ -816,8 +811,8 @@ describe('oracledb', () => {
 
         await conn.close();
         const spanNamesList = [];
-        spanNamesList.push('oracledb.LogOffMessage');
-        spanNamesList.push('oracledb.Connection.close');
+        spanNamesList.push(SpanNames.LOGOFF_MSG);
+        spanNamesList.push(SpanNames.CONNECT_CLOSE);
         verifySpans(span, attrList, spanNamesList);
         span.end();
       });
@@ -1240,7 +1235,7 @@ describe('oracledb', () => {
           verifySpans(
             span,
             [connAttributes, connAttributes],
-            [SpanNames.EXECUTE_MSG, CONN_EXECUTE_MANY]
+            [SpanNames.EXECUTE_MSG, SpanNames.EXECUTE_MANY]
           );
         } catch (e: any) {
           assert.ok(false, e.message);
@@ -1267,7 +1262,7 @@ describe('oracledb', () => {
         verifySpans(
           null,
           [connAttributes, connAttributes],
-          [SpanNames.EXECUTE_MSG, CONN_EXECUTE_MANY]
+          [SpanNames.EXECUTE_MSG, SpanNames.EXECUTE_MANY]
         );
       } catch (e: any) {
         assert.ok(false, e.message);
@@ -1380,7 +1375,7 @@ describe('oracledb', () => {
           verifySpans(
             span,
             [connAttributes, connAttributes, connAttributes],
-            [LOB_OPERATION_SPAN, LOB_OPERATION_SPAN, LOB_CREATE_SPAN]
+            [SpanNames.LOB_MESSAGE, SpanNames.LOB_MESSAGE, SpanNames.CREATE_LOB]
           );
         } catch (e: any) {
           assert.ok(false, e.message);
@@ -1405,7 +1400,7 @@ describe('oracledb', () => {
           verifySpans(
             span,
             [connAttributes, connAttributes],
-            [LOB_OPERATION_SPAN, LOB_READ_SPAN]
+            [SpanNames.LOB_MESSAGE, SpanNames.LOB_GETDATA]
           );
         } catch (e: any) {
           assert.ok(false, e.message);
