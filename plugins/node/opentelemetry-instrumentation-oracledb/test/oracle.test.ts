@@ -704,16 +704,18 @@ describe('oracledb', () => {
       };
       const wrongConfig = Object.assign({}, POOL_CONFIG);
       wrongConfig.password = 'null';
+      wrongConfig.poolMin = getPoolConnFailedAttrs[
+        AttributeNames.ORACLE_POOL_MIN
+      ] = 1;
       instrumentation.disable();
       if (!oracledb.thin) {
         wrongConfig.poolMin = 0;
         getPoolConnFailedAttrs[AttributeNames.ORACLE_POOL_MIN] = 0;
       }
       pool = await oracledb.createPool(wrongConfig);
-      if (!(await waitForCreatePool(pool))) {
-        // skipping the test.
-        this.skip();
-      }
+
+      // wait for attempting to create a poolMin connection
+      await waitForCreatePool(pool);
       instrumentation.enable();
       await context.with(trace.setSpan(context.active(), span), async () => {
         await assert.rejects(
@@ -742,15 +744,20 @@ describe('oracledb', () => {
       };
       const wrongConfig = Object.assign({}, POOL_CONFIG);
       wrongConfig.password = 'null';
+      wrongConfig.password = 'null';
+      wrongConfig.poolMin = getPoolConnFailedAttrs[
+        AttributeNames.ORACLE_POOL_MIN
+      ] = 1;
       instrumentation.disable();
       if (!oracledb.thin) {
-        wrongConfig.poolMin = 0;
-        getPoolConnFailedAttrs[AttributeNames.ORACLE_POOL_MIN] = 0;
+        wrongConfig.poolMin = getPoolConnFailedAttrs[
+          AttributeNames.ORACLE_POOL_MIN
+        ] = 0;
       }
       pool = await oracledb.createPool(wrongConfig);
-      if (!(await waitForCreatePool(pool))) {
-        this.skip();
-      }
+
+      // wait for attempting to create a poolMin connection
+      await waitForCreatePool(pool);
       instrumentation.enable();
       await context.with(trace.setSpan(context.active(), span), async () => {
         await new Promise<void>(resolve => {
