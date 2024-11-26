@@ -26,7 +26,6 @@ import {
 } from '@opentelemetry/api';
 import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
 import * as testUtils from '@opentelemetry/contrib-test-utils';
-import { ZipkinExporter } from '@opentelemetry/exporter-zipkin';
 import { registerInstrumentationTesting } from '@opentelemetry/contrib-test-utils';
 import {
   BasicTracerProvider,
@@ -471,13 +470,6 @@ describe('oracledb', () => {
     await doSetup();
     updateAttrSpanList(connection);
     provider.addSpanProcessor(new SimpleSpanProcessor(memoryExporter));
-
-    const exporter = new ZipkinExporter({
-      serviceName: 'oracle-service',
-    });
-
-    provider.addSpanProcessor(new SimpleSpanProcessor(exporter));
-
     contextManager = new AsyncHooksContextManager().enable();
     context.setGlobalContextManager(contextManager);
     instrumentation.setTracerProvider(provider);
