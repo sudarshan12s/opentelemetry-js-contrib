@@ -17,7 +17,7 @@ npm install --save @opentelemetry/instrumentation-oracledb
 
 ## Supported Versions
 
- - [`oracledb`](https://www.npmjs.com/package/oracledb) versions `>=6.7.0`
+- [`oracledb`](https://www.npmjs.com/package/oracledb) versions `>=6.7.0`
 
 ## Usage
 
@@ -40,9 +40,11 @@ registerInstrumentations({
   ],
 })
 ```
+
 Caveats with  ``oracledb`` Thick mode:
- - RoundTrip Spans will not appear for Thick Mode
- - Hostname will not be available in Thick Mode
+
+- RoundTrip Spans will not appear for Thick Mode
+- Hostname will not be available in Thick Mode
 
 ### Oracle Instrumentation Options
 
