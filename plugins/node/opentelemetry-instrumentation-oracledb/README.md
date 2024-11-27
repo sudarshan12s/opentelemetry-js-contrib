@@ -17,13 +17,14 @@ npm install --save @opentelemetry/instrumentation-oracledb
 
 ## Supported Versions
 
-- [`oracledb`](https://www.npmjs.com/package/oracledb) versions `>=6.7.0`
+ - [`oracledb`](https://www.npmjs.com/package/oracledb) versions `>=6.7.0`
 
 ## Usage
 
-OpenTelemetry oracledb Instrumentation allows the user to automatically collect trace data and export them to the backend of choice, to give observability to distributed systems when working with [oracledb](https://www.npmjs.com/package/oracledb).
+OpenTelemetry OracleInstrumentation allows the user to automatically collect trace data and export them to the backend of choice, to give observability to distributed systems when working with [oracledb](https://www.npmjs.com/package/oracledb). This module works with both Thin and Thick modes of the oracledb
+package, although there may be some caveats with Thick Mode now, which are listed in a later paragraph.
 
-To load a specific plugin (**oracledb** in this case), specify it in the registerInstrumentations's configuration
+To load a specific plugin (**OracleInstrumentation** in this case), specify it in the configuration of the registerInstrumentations object.
 
 ```js
 const { NodeTracerProvider } = require('@opentelemetry/sdk-trace-node');
@@ -39,8 +40,11 @@ registerInstrumentations({
   ],
 })
 ```
+Caveats with  ``oracledb`` Thick mode:
+ - RoundTrip Spans will not appear for Thick Mode
+ - Hostname will not be available in Thick Mode
 
-### oracle instrumentation Options
+### Oracle Instrumentation Options
 
 | Options | Type | Default | Description |
 | ------- | ---- | --------| ----------- |
