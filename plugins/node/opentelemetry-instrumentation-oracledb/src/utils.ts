@@ -74,7 +74,7 @@ export class OracleTelemetryTraceHandler extends newmoduleExports.traceHandler
    * semantic standards and module custom keys.
    */
   private _getConnectionSpanAttributes(config: spanConnectionConfig) {
-    const attrs = {
+    return {
       [SEMATTRS_DB_SYSTEM]: DBSYSTEMVALUES_ORACLE,
       [SEMATTRS_NET_TRANSPORT]: config.protocol,
       [SEMATTRS_DB_USER]: config.user,
@@ -83,13 +83,10 @@ export class OracleTelemetryTraceHandler extends newmoduleExports.traceHandler
       [AttributeNames.ORACLE_POOL_MIN]: config.poolMin,
       [AttributeNames.ORACLE_POOL_MAX]: config.poolMax,
       [AttributeNames.ORACLE_POOL_INCR]: config.poolIncrement,
-    };
-    return {
       [SEMATTRS_DB_NAME]: config.serviceName,
       [SEMATTRS_DB_CONNECTION_STRING]: config.connectString,
       [SEMATTRS_NET_PEER_NAME]: config.hostName,
       [SEMATTRS_NET_PEER_PORT]: config.port,
-      ...attrs,
     };
   }
 
@@ -111,7 +108,6 @@ export class OracleTelemetryTraceHandler extends newmoduleExports.traceHandler
           ) {
             return value.toString();
           } else if (typeof value === 'object') {
-            // Date object will come in UTC format.
             return JSON.stringify(value);
           } else {
             // number, string, boolean,
@@ -129,7 +125,7 @@ export class OracleTelemetryTraceHandler extends newmoduleExports.traceHandler
   /**
    * updates the call level attributes in span.
    * roundTrip flag will skip dumping bind values for
-   * internal roundtrip spans generated for public API.
+   * internal roundtrip spans generated for oracledb exported functions.
    */
   private _setCallLevelAttributes(
     span: Span,
@@ -141,7 +137,7 @@ export class OracleTelemetryTraceHandler extends newmoduleExports.traceHandler
     if (callConfig.statement) {
       span.setAttribute(
         SEMATTRS_DB_OPERATION,
-        // retrieve first word
+        // simplified logic to retrieve just the first word
         callConfig.statement.split(' ')[0].toUpperCase()
       );
       if (
