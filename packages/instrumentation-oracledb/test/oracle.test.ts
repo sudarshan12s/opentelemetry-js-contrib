@@ -50,10 +50,7 @@ import {
   ATTR_EXCEPTION_TYPE,
 } from '@opentelemetry/semantic-conventions';
 
-import {
-  ATTR_DB_OPERATION_PARAMETER,
-  ATTR_DB_USER
-} from '../src/semconv';
+import { ATTR_DB_OPERATION_PARAMETER, ATTR_DB_USER } from '../src/semconv';
 
 const memoryExporter = new InMemorySpanExporter();
 let contextManager: AsyncLocalStorageContextManager;

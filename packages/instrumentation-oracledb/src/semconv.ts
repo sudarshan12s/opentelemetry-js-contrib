@@ -36,7 +36,8 @@
  *
  * @experimental This attribute is experimental and is subject to breaking changes in minor releases of `@opentelemetry/semantic-conventions`.
  */
-export const ATTR_DB_OPERATION_PARAMETER = (key: string) => `db.operation.parameter.${key}`;
+export const ATTR_DB_OPERATION_PARAMETER = (key: string) =>
+  `db.operation.parameter.${key}`;
 
 /**
  * Deprecated, no replacement at this time.

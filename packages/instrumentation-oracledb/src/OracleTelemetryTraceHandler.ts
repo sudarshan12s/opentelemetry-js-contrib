@@ -34,10 +34,7 @@ import {
   ATTR_SERVER_ADDRESS,
   ATTR_NETWORK_TRANSPORT,
 } from '@opentelemetry/semantic-conventions';
-import {
-  ATTR_DB_USER,
-  ATTR_DB_OPERATION_PARAMETER
-} from './semconv';
+import { ATTR_DB_USER, ATTR_DB_OPERATION_PARAMETER } from './semconv';
 
 import type * as oracleDBTypes from 'oracledb';
 type TraceHandlerBaseCtor = new () => any;
@@ -149,7 +146,8 @@ export function getOracleTelemetryTraceHandlerClass(
           values.forEach((value, index) => {
             const extractedValue = this._extractValue(value);
             if (extractedValue !== undefined) {
-              convertedValues[ATTR_DB_OPERATION_PARAMETER(`${index}`)] = extractedValue;
+              convertedValues[ATTR_DB_OPERATION_PARAMETER(`${index}`)] =
+                extractedValue;
             }
           });
         } else if (values && typeof values === 'object') {
