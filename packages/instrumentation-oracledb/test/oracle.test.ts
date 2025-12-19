@@ -77,8 +77,8 @@ let numExecSpans = 2; // Default number of Spans created for Execute API in thin
 let numConnSpans = 2; // Default number of spans created during connection establishment.
 let poolMinSpanCount = 1; // number of spans created for createPool considering poolMin.
 const CONFIG = {
-  user: process.env.ORACLE_USER || 'demo',
-  password: process.env.ORACLE_PASSWORD || 'demo',
+  user: process.env.ORACLE_USER || 'vector',
+  password: process.env.ORACLE_PASSWORD || 'vector',
   connectString: process.env.ORACLE_CONNECTSTRING || 'localhost:1521/freepdb1',
 };
 const POOL_CONFIG = {
@@ -187,7 +187,7 @@ function updateAttrSpanList(connection: oracledb.Connection) {
     attributes = { ...DEFAULT_ATTRIBUTES_THICK };
     numExecSpans = 1;
   }
-  attributes[ATTR_DB_NAMESPACE] = `||${connection.serviceName}`;
+  attributes[ATTR_DB_NAMESPACE] = `${(connection as any).dbUniqueName}`;
 
   // initialize the span attributes list.
   connAttrList = [];
@@ -296,10 +296,6 @@ function checkRoundTripSpans(
       statusList[index]
     );
   }
-}
-
-function getDBNameSpace(instanceName = '', pdbName = '', servicename = '') {
-  return [instanceName, pdbName, servicename].join('|');
 }
 
 // It verifies the spans, its attributes and the parent child relationship.
@@ -444,11 +440,7 @@ describe('oracledb', () => {
         ? connection.dbName.toUpperCase()
         : connection.dbName;
     }
-    connAttributes[ATTR_DB_NAMESPACE] = getDBNameSpace(
-      connection.instanceName,
-      dbName,
-      connection.serviceName
-    );
+    connAttributes[ATTR_DB_NAMESPACE] = (connection as any).dbUniqueName;
     poolAttributes = { ...connAttributes, ...POOL_ATTRIBUTES };
 
     executeAttributes = {

@@ -95,19 +95,6 @@ export function getOracleTelemetryTraceHandlerClass(
       );
     }
 
-    // It returns db.namespace as mentioned in semantic conventions
-    // Ex: ORCL1|PDB1|db_high.adb.oraclecloud.com
-    private _getDBNameSpace(
-      instanceName?: string,
-      pdbName?: string,
-      serviceName?: string
-    ): string | undefined {
-      if (instanceName == null && pdbName == null && serviceName == null) {
-        return undefined;
-      }
-      return `${instanceName ?? ''}|${pdbName ?? ''}|${serviceName ?? ''}`;
-    }
-
     // Returns the connection related Attributes for
     // semantic standards and module custom keys.
     private _getConnectionSpanAttributes(config: SpanConnectionConfig) {
@@ -115,11 +102,7 @@ export function getOracleTelemetryTraceHandlerClass(
         [ATTR_DB_SYSTEM_NAME]: DB_SYSTEM_NAME_VALUE_ORACLE_DB,
         [ATTR_NETWORK_TRANSPORT]: config.protocol,
         [ATTR_DB_USER]: config.user,
-        [ATTR_DB_NAMESPACE]: this._getDBNameSpace(
-          config.instanceName,
-          config.pdbName,
-          config.serviceName
-        ),
+        [ATTR_DB_NAMESPACE]: config.dbUniqueName,
         [ATTR_SERVER_ADDRESS]: config.hostName,
         [ATTR_SERVER_PORT]: config.port,
       };
@@ -289,8 +272,7 @@ export function getOracleTelemetryTraceHandlerClass(
         return;
       }
 
-      const { instanceName, pdbName, serviceName } = connectLevelConfig;
-      const dbName = this._getDBNameSpace(instanceName, pdbName, serviceName);
+      const dbName = connectLevelConfig.dbUniqueName;
       const sqlCommand =
         callLevelConfig?.statement?.split(' ')[0].toUpperCase() || '';
       userContext.span.updateName(
