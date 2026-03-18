@@ -89,6 +89,7 @@ export function getOracleTelemetryTraceHandlerClass(
   class OracleTelemetryTraceHandler extends traceHandlerBase {
     private _getTracer: () => Tracer;
     private _instrumentConfig: OracleInstrumentationConfig;
+    private _hasLoggedMissingAppContext = false;
 
     constructor(getTracer: () => Tracer, config: OracleInstrumentationConfig) {
       super();
@@ -101,6 +102,28 @@ export function getOracleTelemetryTraceHandlerClass(
         this._instrumentConfig.requireParentSpan === true &&
         trace.getSpan(context.active()) === undefined
       );
+    }
+
+    private _shouldPropagateTraceContext(): boolean {
+      return this._instrumentConfig.enableTraceContextPropagation === true;
+    }
+
+    private _canUseAppContext(connection: unknown): connection is {
+      appContext: (name: string, entries: Record<string, string>[]) => void;
+    } {
+      const hasAppContext =
+        typeof (connection as any)?.appContext === 'function';
+      if (
+        !hasAppContext &&
+        this._instrumentConfig.enableTraceContextPropagation &&
+        !this._hasLoggedMissingAppContext
+      ) {
+        diag.warn(
+          'Oracle connection does not expose appContext; CLIENTCONTEXT trace propagation is disabled.'
+        );
+        this._hasLoggedMissingAppContext = true;
+      }
+      return hasAppContext;
     }
 
     // It returns db.namespace as mentioned in semantic conventions
@@ -340,6 +363,7 @@ export function getOracleTelemetryTraceHandlerClass(
 
     setInstrumentConfig(config: OracleInstrumentationConfig = {}) {
       this._instrumentConfig = config;
+      this._hasLoggedMissingAppContext = false;
     }
 
     // This method is invoked before calling an exported function
@@ -353,6 +377,9 @@ export function getOracleTelemetryTraceHandlerClass(
       const spanAttributes = traceContext.connectLevelConfig
         ? this._getConnectionSpanAttributes(traceContext.connectLevelConfig)
         : {};
+      const shouldPropagateTraceContext = this._shouldPropagateTraceContext();
+      const shouldSetConnectionAction =
+        this._instrumentConfig.propagateTraceContextToSessionAction === true;
 
       traceContext.userContext = {
         span: this._getTracer().startSpan(spanName, {
@@ -363,7 +390,7 @@ export function getOracleTelemetryTraceHandlerClass(
 
       if (traceContext.fn) {
         if (
-          this._instrumentConfig.propagateTraceContextToSessionAction &&
+          (shouldPropagateTraceContext || shouldSetConnectionAction) &&
           (traceContext.operation === SpanNames.EXECUTE ||
             traceContext.operation === SpanNames.EXECUTE_MANY)
         ) {
@@ -371,14 +398,28 @@ export function getOracleTelemetryTraceHandlerClass(
           const traceparent = buildTraceparent(
             traceContext.userContext.span.spanContext()
           );
-          if (connection && 'action' in connection && traceparent) {
-            try {
-              connection.action = traceparent;
-            } catch (err) {
-              diag.debug(
-                'Failed to set connection.action for trace propagation',
-                err
-              );
+
+          if (
+            connection &&
+            traceparent
+          ) {
+            if (
+              shouldPropagateTraceContext &&
+              this._canUseAppContext(connection)
+            ) {
+              connection.appContext('CLIENTCONTEXT', [
+                { ora$opentelem$tracectx: traceparent },
+              ]);
+            }
+            if (shouldSetConnectionAction && 'action' in connection) {
+              try {
+                connection.action = traceparent;
+              } catch (err) {
+                diag.debug(
+                  'Failed to set connection.action for trace propagation',
+                  err
+                );
+              }
             }
           }
         }
@@ -433,6 +474,14 @@ export function getOracleTelemetryTraceHandlerClass(
           attributes: spanAttrs,
         }),
       };
+      if (this._shouldPropagateTraceContext()) {
+        const traceparent = buildTraceparent(
+          traceContext.userContext.span.spanContext()
+        );
+        if (traceparent) {
+          traceContext.userContext.traceParent = traceparent;
+        }
+      }
     }
 
     // This method is invoked after a round trip call to DB is done

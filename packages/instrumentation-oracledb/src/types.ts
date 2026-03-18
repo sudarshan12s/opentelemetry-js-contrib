@@ -94,8 +94,25 @@ export interface OracleInstrumentationConfig extends InstrumentationConfig {
 
   /**
    * Automatic propagation of trace context using V$SESSION.ACTION.
+   * This controls updates to `connection.action` only.
    *
    * @default false
    */
   propagateTraceContextToSessionAction?: boolean;
+
+  /**
+   * Enables OpenTelemetry trace context propagation to Oracle database
+   * sessions (via CLIENTCONTEXT) and internal round trips.
+   *
+   * This option is independent from
+   * `propagateTraceContextToSessionAction`.
+   * When both are enabled, traceparent is injected into
+   * both CLIENTCONTEXT and `connection.action`.
+   *
+   * Requires a node-oracledb version that exposes `connection.appContext`;
+   * if unavailable, the instrumentation emits a warning and skips CLIENTCONTEXT
+   * propagation.
+   * @default false
+   */
+  enableTraceContextPropagation?: boolean;
 }

@@ -78,8 +78,8 @@ let numExecSpans = 2; // Default number of Spans created for Execute API in thin
 let numConnSpans = 2; // Default number of spans created during connection establishment.
 let poolMinSpanCount = 1; // number of spans created for createPool considering poolMin.
 const CONFIG = {
-  user: process.env.ORACLE_USER || 'demo',
-  password: process.env.ORACLE_PASSWORD || 'demo',
+  user: process.env.ORACLE_USER || 'sequelizetest',
+  password: process.env.ORACLE_PASSWORD || 'sequelizetest',
   connectString: process.env.ORACLE_CONNECTSTRING || 'localhost:1521/freepdb1',
 };
 const POOL_CONFIG = {
@@ -407,6 +407,7 @@ const sqlCreateTable = async function (
 
 describe('oracledb', () => {
   let connection: oracledb.Connection;
+  let supportsAppContext = false;
 
   const testOracleDB = process.env.RUN_ORACLEDB_TESTS; // For CI: assumes local oracledb is already available
   const shouldTest = testOracleDB; // Skips these tests if false (default)
@@ -418,6 +419,37 @@ describe('oracledb', () => {
   const binds = ['0'];
   const bindsByName = {
     name: { val: '0', type: oracledb.STRING, dir: oracledb.BIND_IN },
+  };
+  const resetConnectionAction = () => {
+    try {
+      if (connection && typeof (connection as any).action !== 'undefined') {
+        (connection as any).action = '';
+      }
+      if (supportsAppContext) {
+        (connection as any).appContext('CLIENTCONTEXT', [
+          { ora$opentelem$tracectx: '' },
+        ]);
+      }
+    } catch {
+      // Ignore cleanup errors when resetting connection action.
+    }
+  };
+  const getSessionContext = async () => {
+    const result = await connection.execute(
+      "select sys_context('USERENV', 'ACTION') as action, sys_context('CLIENTCONTEXT', 'ORA$OPENTELEM$TRACECTX') as trace_ctx, sys_context('CLIENTCONTEXT', 'ora$opentelem$tracectx') as trace_ctx_lower from dual",
+      [],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+    const row = result.rows?.[0] as Record<string, string> | undefined;
+    const actionValue = row?.ACTION ?? row?.action;
+    const traceCtxValue =
+      row?.TRACE_CTX ??
+      row?.trace_ctx ??
+      row?.TRACECONTEXT ??
+      row?.tracecontext ??
+      row?.TRACE_CTX_LOWER ??
+      row?.trace_ctx_lower;
+    return { action: actionValue, traceContext: traceCtxValue };
   };
   const tableName = 'oracledb_ot_execute_test';
   const sqlCreate = `create table ${tableName} (id NUMBER, val VARCHAR2(100), clobval CLOB)`;
@@ -497,6 +529,8 @@ describe('oracledb', () => {
     }
 
     connection = await oracledb.getConnection(CONFIG);
+    supportsAppContext =
+      typeof (connection as any)?.appContext === 'function';
     await doSetup();
     updateAttrSpanList(connection);
     contextManager = new AsyncLocalStorageContextManager().enable();
@@ -521,11 +555,13 @@ describe('oracledb', () => {
   afterEach(async () => {
     memoryExporter.reset();
     context.disable();
+    resetConnectionAction();
     instrumentation.enable();
     instrumentation.setConfig({
       enhancedDatabaseReporting: false,
       dbStatementDump: false,
       propagateTraceContextToSessionAction: false,
+      enableTraceContextPropagation: false,
     });
   });
 
@@ -977,15 +1013,14 @@ describe('oracledb', () => {
       });
     });
 
-    it('should propagate trace context via connection.action when enabled', async () => {
-      instrumentation.setConfig({ propagateTraceContextToSessionAction: true });
-      const result = await connection.execute(
-        "select sys_context('USERENV', 'ACTION') as action from dual",
-        [],
-        { outFormat: oracledb.OUT_FORMAT_OBJECT }
-      );
-      const row = result.rows?.[0] as Record<string, string> | undefined;
-      const actionValue = row?.ACTION;
+    it('should not propagate trace context when both propagation flags are disabled', async () => {
+      instrumentation.setConfig({
+        propagateTraceContextToSessionAction: false,
+        enableTraceContextPropagation: false,
+      });
+      resetConnectionAction();
+      memoryExporter.reset();
+      const { action, traceContext } = await getSessionContext();
       const spans = memoryExporter.getFinishedSpans();
       const executeSpan = spans[spans.length - 1];
       assert.ok(executeSpan, 'expected span to verify trace propagation');
@@ -994,7 +1029,99 @@ describe('oracledb', () => {
         `expected execute span, got ${executeSpan.name}`
       );
       const expectedTraceparent = buildTraceparent(executeSpan.spanContext());
-      assert.strictEqual(actionValue, expectedTraceparent);
+      assert.ok(!action, 'action should not be populated by default');
+      assert.ok(!traceContext, 'client context should not be populated');
+      assert.ok(expectedTraceparent);
+    });
+
+    it('should propagate only connection.action when session action propagation is enabled', async () => {
+      instrumentation.setConfig({
+        propagateTraceContextToSessionAction: true,
+        enableTraceContextPropagation: false,
+      });
+      resetConnectionAction();
+      memoryExporter.reset();
+      const { action, traceContext } = await getSessionContext();
+      const spans = memoryExporter.getFinishedSpans();
+      const executeSpan = spans[spans.length - 1];
+      assert.ok(executeSpan, 'expected span to verify trace propagation');
+      assert.ok(
+        executeSpan.name.startsWith(SpanNames.EXECUTE),
+        `expected execute span, got ${executeSpan.name}`
+      );
+      const expectedTraceparent = buildTraceparent(executeSpan.spanContext());
+      assert.strictEqual(
+        action,
+        expectedTraceparent,
+        'connection.action should receive traceparent'
+      );
+      assert.ok(!traceContext, 'client context should not be set');
+    });
+
+    it('should propagate only client context when trace context propagation is enabled', async () => {
+      instrumentation.setConfig({
+        propagateTraceContextToSessionAction: false,
+        enableTraceContextPropagation: true,
+      });
+      resetConnectionAction();
+      memoryExporter.reset();
+      const { action, traceContext } = await getSessionContext();
+      const spans = memoryExporter.getFinishedSpans();
+      const executeSpan = spans[spans.length - 1];
+      assert.ok(executeSpan, 'expected span to verify trace propagation');
+      assert.ok(
+        executeSpan.name.startsWith(SpanNames.EXECUTE),
+        `expected execute span, got ${executeSpan.name}`
+      );
+      const expectedTraceparent = buildTraceparent(executeSpan.spanContext());
+      if (supportsAppContext) {
+        assert.strictEqual(
+          traceContext,
+          expectedTraceparent,
+          'CLIENTCONTEXT should receive traceparent'
+        );
+      } else {
+        assert.ok(
+          !traceContext,
+          'CLIENTCONTEXT not supported; trace context should remain unset'
+        );
+      }
+      assert.ok(!action, 'connection.action should remain unset');
+    });
+
+    it('should propagate trace context to both connection.action and client context when both flags are enabled', async () => {
+      instrumentation.setConfig({
+        propagateTraceContextToSessionAction: true,
+        enableTraceContextPropagation: true,
+      });
+      resetConnectionAction();
+      memoryExporter.reset();
+      const { action, traceContext } = await getSessionContext();
+      const spans = memoryExporter.getFinishedSpans();
+      const executeSpan = spans[spans.length - 1];
+      assert.ok(executeSpan, 'expected span to verify trace propagation');
+      assert.ok(
+        executeSpan.name.startsWith(SpanNames.EXECUTE),
+        `expected execute span, got ${executeSpan.name}`
+      );
+      const expectedTraceparent = buildTraceparent(executeSpan.spanContext());
+      assert.strictEqual(
+        action,
+        expectedTraceparent,
+        'connection.action should receive traceparent'
+      );
+      if (supportsAppContext) {
+        assert.strictEqual(
+          traceContext,
+          expectedTraceparent,
+          'CLIENTCONTEXT should receive traceparent'
+        );
+      } else {
+        assert.ok(
+          !traceContext,
+          'CLIENTCONTEXT not supported; trace context should remain unset'
+        );
+      }
     });
 
     it('should intercept connection.execute(sql, values) bind-by-name', async () => {
