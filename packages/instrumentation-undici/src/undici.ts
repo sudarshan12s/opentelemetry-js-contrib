@@ -1,17 +1,6 @@
 /*
  * Copyright The OpenTelemetry Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-License-Identifier: Apache-2.0
  */
 import * as diagch from 'diagnostics_channel';
 import { URL } from 'url';
@@ -458,7 +447,6 @@ export class UndiciInstrumentation extends InstrumentationBase<UndiciInstrumenta
     if (!record) {
       return;
     }
-
     const { span, attributes, startTime } = record;
 
     // End the span
@@ -484,22 +472,30 @@ export class UndiciInstrumentation extends InstrumentationBase<UndiciInstrumenta
 
     const { span, attributes, startTime } = record;
 
-    // NOTE: in `undici@6.3.0` when request aborted the error type changes from
-    // a custom error (`RequestAbortedError`) to a built-in `DOMException` carrying
-    // some differences:
-    // - `code` is from DOMEXception (ABORT_ERR: 20)
-    // - `message` changes
-    // - stacktrace is smaller and contains node internal frames
-    span.recordException(error);
-    span.setStatus({
-      code: SpanStatusCode.ERROR,
-      message: error.message,
-    });
-    span.end();
-    this._recordFromReq.delete(request);
+    // Per OTel HTTP spec: if the request was intentionally cancelled via an
+    // AbortController signal, it SHOULD NOT be treated as an error.
+    // Span status should be left unset and error.type should not be set.
+    // https://opentelemetry.io/docs/specs/semconv/http/http-spans/#http-client
+    const isAbort =
+      error.name === 'AbortError' ||
+      (typeof DOMException !== 'undefined' &&
+        error instanceof DOMException &&
+        error.code === DOMException.ABORT_ERR);
 
-    // Record metrics (with the error)
-    attributes[ATTR_ERROR_TYPE] = error.message;
+    if (isAbort) {
+      span.end();
+    } else {
+      span.recordException(error);
+      span.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: error.message,
+      });
+      span.end();
+
+      attributes[ATTR_ERROR_TYPE] = error.message;
+    }
+
+    this._recordFromReq.delete(request);
     this.recordRequestDuration(attributes, startTime);
   }
 

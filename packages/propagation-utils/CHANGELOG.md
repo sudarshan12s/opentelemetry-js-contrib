@@ -1,6 +1,51 @@
 <!-- markdownlint-disable MD007 MD034 -->
 # Changelog
 
+## [0.31.21](https://github.com/open-telemetry/opentelemetry-js-contrib/compare/propagation-utils-v0.31.20...propagation-utils-v0.31.21) (2026-05-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @opentelemetry/contrib-test-utils bumped from ^0.64.0 to ^0.65.0
+
+## [0.31.20](https://github.com/open-telemetry/opentelemetry-js-contrib/compare/propagation-utils-v0.31.19...propagation-utils-v0.31.20) (2026-05-06)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @opentelemetry/contrib-test-utils bumped from ^0.63.0 to ^0.64.0
+
+## [0.31.19](https://github.com/open-telemetry/opentelemetry-js-contrib/compare/propagation-utils-v0.31.18...propagation-utils-v0.31.19) (2026-04-29)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @opentelemetry/contrib-test-utils bumped from ^0.62.0 to ^0.63.0
+
+## [0.31.18](https://github.com/open-telemetry/opentelemetry-js-contrib/compare/propagation-utils-v0.31.17...propagation-utils-v0.31.18) (2026-04-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @opentelemetry/contrib-test-utils bumped from ^0.61.0 to ^0.62.0
+
+## [0.31.17](https://github.com/open-telemetry/opentelemetry-js-contrib/compare/propagation-utils-v0.31.16...propagation-utils-v0.31.17) (2026-03-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @opentelemetry/contrib-test-utils bumped from ^0.60.0 to ^0.61.0
+
 ## [0.31.16](https://github.com/open-telemetry/opentelemetry-js-contrib/compare/propagation-utils-v0.31.15...propagation-utils-v0.31.16) (2026-03-04)
 
 
