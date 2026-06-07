@@ -396,9 +396,16 @@ export function getOracleTelemetryTraceHandlerClass(
               shouldPropagateTraceContext &&
               this._canUseAppContext(connection)
             ) {
-              connection.appContext('CLIENTCONTEXT', [
-                { ora$opentelem$tracectx: traceparent },
-              ]);
+              try {
+                connection.appContext('CLIENTCONTEXT', [
+                  { ora$opentelem$tracectx: traceparent },
+                ]);
+              } catch (err) {
+                diag.debug(
+                  'Failed to set connection.appContext for trace propagation',
+                  err
+                );
+              }
             }
             if (shouldSetConnectionAction && 'action' in connection) {
               try {

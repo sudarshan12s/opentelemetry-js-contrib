@@ -56,7 +56,7 @@ Caveats with  ``oracledb`` Thick mode:
 | `responseHook` | `OracleInstrumentationExecutionResponseHook` (function) | | Function for adding custom span attributes from the db response |
 | `requireParentSpan` | `boolean` | `false` | If true, requires a parent span to create new spans |
 | `propagateTraceContextToSessionAction` | `boolean` | `false` | If true, injects the W3C Trace Context into the Oracle `V$SESSION.ACTION` field (via `connection.action`). This allows the OpenTelemetry Collector to correlate application traces with database server spans. |
-| `enableTraceContextPropagation` | `boolean` | `false` | If true, injects the W3C Trace Context into the Oracle `CLIENTCONTEXT` namespace and propagates the value across internal round trips. Requires a node-oracledb version that exposes `connection.appContext`; otherwise the instrumentation logs a warning and skips this propagation. |
+| `enableTraceContextPropagation` | `boolean` | `false` | If true, injects the W3C Trace Context into the Oracle `CLIENTCONTEXT` namespace. In Thin mode, the same value is also propagated across internal round trips. Requires a node-oracledb version that exposes `connection.appContext`; otherwise the instrumentation logs a warning and skips this propagation. |
 
 ## Useful links
 

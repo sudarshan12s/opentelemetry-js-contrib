@@ -67,8 +67,8 @@ let numExecSpans = 2; // Default number of Spans created for Execute API in thin
 let numConnSpans = 2; // Default number of spans created during connection establishment.
 let poolMinSpanCount = 1; // number of spans created for createPool considering poolMin.
 const CONFIG = {
-  user: process.env.ORACLE_USER || 'sequelizetest',
-  password: process.env.ORACLE_PASSWORD || 'sequelizetest',
+  user: process.env.ORACLE_USER || 'demo',
+  password: process.env.ORACLE_PASSWORD || 'demo',
   connectString: process.env.ORACLE_CONNECTSTRING || 'localhost:1521/freepdb1',
 };
 const POOL_CONFIG = {
@@ -1078,6 +1078,23 @@ describe('oracledb', () => {
       assert.ok(!action, 'connection.action should remain unset');
     });
 
+    it('should not fail execute when client context propagation throws', async () => {
+      instrumentation.setConfig({
+        propagateTraceContextToSessionAction: false,
+        enableTraceContextPropagation: true,
+      });
+      const originalAppContext = (connection as any).appContext;
+      (connection as any).appContext = () => {
+        throw new Error('appContext failed');
+      };
+      try {
+        const result = await connection.execute(sql);
+        assert.ok(result);
+      } finally {
+        (connection as any).appContext = originalAppContext;
+      }
+    });
+
     it('should propagate trace context to both connection.action and client context when both flags are enabled', async () => {
       instrumentation.setConfig({
         propagateTraceContextToSessionAction: true,
@@ -1111,6 +1128,31 @@ describe('oracledb', () => {
           'CLIENTCONTEXT not supported; trace context should remain unset'
         );
       }
+    });
+
+    it('should propagate client context across internal round trips only in thin mode', async function () {
+      if (process.env.NODE_ORACLEDB_DRIVER_MODE === 'thick') {
+        this.skip();
+      }
+      instrumentation.setConfig({
+        propagateTraceContextToSessionAction: false,
+        enableTraceContextPropagation: true,
+      });
+      resetConnectionAction();
+      memoryExporter.reset();
+      const { traceContext } = await getSessionContext();
+      const executeMessageSpan = memoryExporter
+        .getFinishedSpans()
+        .find(span => span.name.startsWith(SpanNames.EXECUTE_MSG));
+      assert.ok(
+        executeMessageSpan,
+        'expected execute message span to verify roundtrip propagation'
+      );
+      assert.strictEqual(
+        traceContext,
+        buildTraceparent(executeMessageSpan.spanContext()),
+        'CLIENTCONTEXT should match the internal roundtrip span in thin mode'
+      );
     });
 
     it('should intercept connection.execute(sql, values) bind-by-name', async () => {
