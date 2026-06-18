@@ -26,7 +26,6 @@ import {
   ATTR_NETWORK_TRANSPORT,
 } from '@opentelemetry/semantic-conventions';
 import {
-  ATTR_DB_USER,
   ATTR_DB_OPERATION_PARAMETER,
   ATTR_ORACLE_DB_INSTANCE_NAME,
   ATTR_ORACLE_DB_NAME,
@@ -101,7 +100,6 @@ export function getOracleTelemetryTraceHandlerClass(
       const attributes: Record<string, string | number | undefined> = {
         [ATTR_DB_SYSTEM_NAME]: DB_SYSTEM_NAME_VALUE_ORACLE_DB,
         [ATTR_NETWORK_TRANSPORT]: config.protocol,
-        [ATTR_DB_USER]: config.user,
         [ATTR_SERVER_ADDRESS]: config.hostName,
         [ATTR_SERVER_PORT]: config.port,
       };
