@@ -18,6 +18,7 @@ export interface SpanConnectionConfig {
   instanceName?: string;
   serverMode?: string;
   pdbName?: string;
+  dbUniqueName?: string;
   poolMin?: number;
   poolMax?: number;
   poolIncrement?: number;
