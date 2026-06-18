@@ -40,6 +40,23 @@ export const ATTR_DB_OPERATION_PARAMETER = (key: string) =>
 export const ATTR_DB_USER = 'db.user' as const;
 
 /**
+ * The instance name associated with the connection in an Oracle Real
+ * Application Clusters environment.
+ */
+export const ATTR_ORACLE_DB_INSTANCE_NAME =
+  'oracle.db.instance.name' as const;
+
+/**
+ * The database name associated with the connection.
+ */
+export const ATTR_ORACLE_DB_NAME = 'oracle.db.name' as const;
+
+/**
+ * The service name currently associated with the database connection.
+ */
+export const ATTR_ORACLE_DB_SERVICE = 'oracle.db.service' as const;
+
+/**
  * Enum value "oracle.db" for attribute {@link ATTR_DB_SYSTEM_NAME}.
  *
  * [Oracle Database](https://www.oracle.com/database/)

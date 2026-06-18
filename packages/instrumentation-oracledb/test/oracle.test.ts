@@ -43,6 +43,9 @@ import {
 import {
   ATTR_DB_OPERATION_PARAMETER,
   ATTR_DB_USER,
+  ATTR_ORACLE_DB_INSTANCE_NAME,
+  ATTR_ORACLE_DB_NAME,
+  ATTR_ORACLE_DB_SERVICE,
   DB_SYSTEM_NAME_VALUE_ORACLE_DB,
 } from '../src/semconv';
 
@@ -104,14 +107,14 @@ let attributesWithSensitiveDataBindsByName: Record<
 let connAttributes: Record<string, string | number>; // connection related span attributes.
 let poolAttributes: Record<string, string | number>; // pool related span attributes.
 let connAttrList: Record<string, string | number>[]; // attributes per span during connection establishment.
-let spanNameSuffix: string; // SpanName will be <operationName serviceName>
+let spanNameSuffix: string; // SpanName will be <operationName db.namespace>
 let failedConnAttrList: Record<string, string | number>[]; // attributes in span for failed connection.
 let poolConnAttrList: Record<string, string | number>[]; // attributes per span when connection established from pool.
 let spanNamesList: string[]; // span names for roundtrips and public API spans.
 
 const DEFAULT_ATTRIBUTES = {
   [ATTR_DB_SYSTEM_NAME]: DB_SYSTEM_NAME_VALUE_ORACLE_DB,
-  [ATTR_DB_NAMESPACE]: serviceName,
+  [ATTR_ORACLE_DB_SERVICE]: serviceName,
   [ATTR_SERVER_ADDRESS]: hostname,
   [ATTR_SERVER_PORT]: pno,
   [ATTR_DB_USER]: CONFIG.user,
@@ -122,7 +125,7 @@ const DEFAULT_ATTRIBUTES = {
 // hostname, port and protocol.
 const DEFAULT_ATTRIBUTES_THICK = {
   [ATTR_DB_SYSTEM_NAME]: DB_SYSTEM_NAME_VALUE_ORACLE_DB,
-  [ATTR_DB_NAMESPACE]: serviceName,
+  [ATTR_ORACLE_DB_SERVICE]: serviceName,
   [ATTR_DB_USER]: CONFIG.user,
 };
 
@@ -176,6 +179,12 @@ function updateAttrSpanList(connection: oracledb.Connection) {
   } else {
     attributes = { ...DEFAULT_ATTRIBUTES_THICK };
     numExecSpans = 1;
+  }
+  if (connection.dbName) {
+    attributes[ATTR_ORACLE_DB_NAME] = connection.dbName;
+  }
+  if (connection.serviceName) {
+    attributes[ATTR_ORACLE_DB_SERVICE] = connection.serviceName;
   }
   attributes[ATTR_DB_NAMESPACE] = `${(connection as any).dbUniqueName}`;
 
@@ -409,7 +418,6 @@ describe('oracledb', () => {
 
   async function doSetup() {
     const extendedConn: any = connection;
-    let dbName;
 
     if (oracledb.thin) {
       connAttributes = { ...DEFAULT_ATTRIBUTES };
@@ -426,9 +434,15 @@ describe('oracledb', () => {
       connAttributes[ATTR_NETWORK_TRANSPORT] = extendedConn.protocol;
     }
     if (connection.dbName) {
-      dbName = oracledb.thin
+      connAttributes[ATTR_ORACLE_DB_NAME] = oracledb.thin
         ? connection.dbName.toUpperCase()
         : connection.dbName;
+    }
+    if (connection.instanceName) {
+      connAttributes[ATTR_ORACLE_DB_INSTANCE_NAME] = connection.instanceName;
+    }
+    if (connection.serviceName) {
+      connAttributes[ATTR_ORACLE_DB_SERVICE] = connection.serviceName;
     }
     connAttributes[ATTR_DB_NAMESPACE] = (connection as any).dbUniqueName;
     poolAttributes = { ...connAttributes, ...POOL_ATTRIBUTES };

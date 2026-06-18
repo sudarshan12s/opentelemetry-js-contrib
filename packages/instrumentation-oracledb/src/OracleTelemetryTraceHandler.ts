@@ -28,6 +28,9 @@ import {
 import {
   ATTR_DB_USER,
   ATTR_DB_OPERATION_PARAMETER,
+  ATTR_ORACLE_DB_INSTANCE_NAME,
+  ATTR_ORACLE_DB_NAME,
+  ATTR_ORACLE_DB_SERVICE,
   DB_SYSTEM_NAME_VALUE_ORACLE_DB,
 } from './semconv';
 
@@ -95,14 +98,28 @@ export function getOracleTelemetryTraceHandlerClass(
     // Returns the connection related Attributes for
     // semantic standards and module custom keys.
     private _getConnectionSpanAttributes(config: SpanConnectionConfig) {
-      return {
+      const attributes: Record<string, string | number | undefined> = {
         [ATTR_DB_SYSTEM_NAME]: DB_SYSTEM_NAME_VALUE_ORACLE_DB,
         [ATTR_NETWORK_TRANSPORT]: config.protocol,
         [ATTR_DB_USER]: config.user,
-        [ATTR_DB_NAMESPACE]: config.dbUniqueName,
         [ATTR_SERVER_ADDRESS]: config.hostName,
         [ATTR_SERVER_PORT]: config.port,
       };
+
+      if (config.dbUniqueName) {
+        attributes[ATTR_DB_NAMESPACE] = config.dbUniqueName;
+      }
+      if (config.instanceName) {
+        attributes[ATTR_ORACLE_DB_INSTANCE_NAME] = config.instanceName;
+      }
+      if (config.dbName) {
+        attributes[ATTR_ORACLE_DB_NAME] = config.dbName;
+      }
+      if (config.serviceName) {
+        attributes[ATTR_ORACLE_DB_SERVICE] = config.serviceName;
+      }
+
+      return attributes;
     }
 
     // It returns true if object is of type oracledb.Lob.
