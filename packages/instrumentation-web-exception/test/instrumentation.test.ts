@@ -1,17 +1,6 @@
 /*
  * Copyright The OpenTelemetry Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 import { ExceptionInstrumentation } from '../src/instrumentation';
@@ -98,17 +87,15 @@ describe('ExceptionInstrumentation', () => {
   });
 
   describe('throwing an error', () => {
-    const instr = new ExceptionInstrumentation();
+    let disableInstrumentations: () => void;
     beforeEach(() => {
-      registerInstrumentations({
-        instrumentations: [instr],
+      disableInstrumentations = registerInstrumentations({
+        instrumentations: [new ExceptionInstrumentation()],
       });
-
-      instr.enable();
     });
 
     afterEach(() => {
-      instr.disable();
+      disableInstrumentations();
       exporter.reset();
     });
 
@@ -179,21 +166,24 @@ describe('ExceptionInstrumentation', () => {
         'app.custom.exception': error.message.toLocaleUpperCase(),
       };
     };
-    const instr = new ExceptionInstrumentation({
-      applyCustomAttributes: applyCustomAttrs,
-    });
-    beforeEach(() => {
-      registerInstrumentations({
-        instrumentations: [instr],
-      });
 
-      instr.enable();
+    let disableInstrumentations: () => void;
+
+    beforeEach(() => {
+      disableInstrumentations = registerInstrumentations({
+        instrumentations: [
+          new ExceptionInstrumentation({
+            applyCustomAttributes: applyCustomAttrs,
+          }),
+        ],
+      });
     });
 
     afterEach(() => {
-      instr.disable();
+      disableInstrumentations();
       exporter.reset();
     });
+
     it('should add custom attributes to the event', async () => {
       setTimeout(() => {
         throwErr('Something happened!');
