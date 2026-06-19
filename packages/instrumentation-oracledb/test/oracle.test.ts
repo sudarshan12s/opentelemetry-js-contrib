@@ -164,6 +164,7 @@ if (process.env.NODE_ORACLEDB_DRIVER_MODE === 'thick') {
 // Additionally, adjusts the number of roundtrip spans based on the database version.
 function updateAttrSpanList(connection: oracledb.Connection) {
   serverVersion = connection.oracleServerVersion;
+  const resolvedConnectMetadataAvailableDuringHandshake = oracledb.version < 70000;
 
   let attributes: Record<string, string | number>;
   if (oracledb.thin) {
@@ -175,13 +176,21 @@ function updateAttrSpanList(connection: oracledb.Connection) {
     attributes = { ...DEFAULT_ATTRIBUTES_THICK };
     numExecSpans = 1;
   }
-  if (connection.dbName) {
+  if (resolvedConnectMetadataAvailableDuringHandshake && connection.dbName) {
     attributes[ATTR_ORACLE_DB_NAME] = connection.dbName;
   }
-  if (connection.serviceName) {
+  if (
+    resolvedConnectMetadataAvailableDuringHandshake &&
+    connection.serviceName
+  ) {
     attributes[ATTR_ORACLE_DB_SERVICE] = connection.serviceName;
   }
-  attributes[ATTR_DB_NAMESPACE] = `${(connection as any).dbUniqueName}`;
+  if (
+    resolvedConnectMetadataAvailableDuringHandshake &&
+    (connection as any).dbUniqueName
+  ) {
+    attributes[ATTR_DB_NAMESPACE] = `${(connection as any).dbUniqueName}`;
+  }
 
   // initialize the span attributes list.
   connAttrList = [];
@@ -1318,6 +1327,10 @@ describe('oracledb', () => {
         { a: 5, b: 'Test 5 (Five)' },
       ];
       const sqlInsert = `INSERT INTO ${tableName} VALUES (:a, :b, 'clob')`;
+      const executeManyAttributes = {
+        ...connAttributes,
+        [ATTR_DB_OPERATION_NAME]: 'INSERT',
+      };
 
       await context.with(trace.setSpan(context.active(), span), async () => {
         const res = await connection.executeMany<Array<string>>(
@@ -1328,10 +1341,10 @@ describe('oracledb', () => {
           assert.ok(res);
           verifySpans(
             span,
-            [connAttributes, connAttributes],
+            [executeManyAttributes, executeManyAttributes],
             [
-              SpanNames.EXECUTE_MSG + ':' + spanNameSuffix,
-              SpanNames.EXECUTE_MANY + ':' + spanNameSuffix,
+              SpanNames.EXECUTE_MSG + ':INSERT' + spanNameSuffix,
+              SpanNames.EXECUTE_MANY + ':INSERT' + spanNameSuffix,
             ]
           );
         } catch (e: any) {
@@ -1353,15 +1366,19 @@ describe('oracledb', () => {
         { a: 5, b: 'Test 5 (Five)' },
       ];
       const sqlInsert = `INSERT INTO ${tableName} VALUES (:a, :b, 'clob')`;
+      const executeManyAttributes = {
+        ...connAttributes,
+        [ATTR_DB_OPERATION_NAME]: 'INSERT',
+      };
       const res = await connection.executeMany<Array<string>>(sqlInsert, binds);
       try {
         assert.ok(res);
         verifySpans(
           null,
-          [connAttributes, connAttributes],
+          [executeManyAttributes, executeManyAttributes],
           [
-            SpanNames.EXECUTE_MSG + ':' + spanNameSuffix,
-            SpanNames.EXECUTE_MANY + ':' + spanNameSuffix,
+            SpanNames.EXECUTE_MSG + ':INSERT' + spanNameSuffix,
+            SpanNames.EXECUTE_MANY + ':INSERT' + spanNameSuffix,
           ]
         );
       } catch (e: any) {
