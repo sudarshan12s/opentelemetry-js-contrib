@@ -26,7 +26,6 @@ import {
   ATTR_NETWORK_TRANSPORT,
 } from '@opentelemetry/semantic-conventions';
 import {
-  ATTR_DB_USER,
   ATTR_DB_OPERATION_PARAMETER,
   ATTR_ORACLE_DB_INSTANCE_NAME,
   ATTR_ORACLE_DB_NAME,
@@ -393,16 +392,24 @@ export function getOracleTelemetryTraceHandlerClass(
               shouldPropagateTraceContext &&
               this._canUseAppContext(connection)
             ) {
+              this.enableTracing();
               try {
                 connection.appContext('CLIENTCONTEXT', [
-                  { ora$opentelem$tracectx: traceparent },
+                  {
+                    ORA$OPENTELEM$TRACECTX:
+                      `traceparent: ${traceparent}\r\ntracestate: \r\n`,
+                  },
+                  {'SERVER_DISTRIBUTED_TRACE_MODE': 'APPLICATION'},
                 ]);
+
               } catch (err) {
                 diag.debug(
                   'Failed to set connection.appContext for trace propagation',
                   err
                 );
               }
+            } else {
+              this.disableTracing();
             }
             if (shouldSetConnectionAction && 'action' in connection) {
               try {
@@ -468,12 +475,15 @@ export function getOracleTelemetryTraceHandlerClass(
         }),
       };
       if (this._shouldPropagateTraceContext()) {
+        this.enableTracing();
         const traceparent = buildTraceparent(
           traceContext.userContext.span.spanContext()
         );
         if (traceparent) {
           traceContext.userContext.traceParent = traceparent;
         }
+      } else {
+        this.disableTracing();
       }
     }
 
