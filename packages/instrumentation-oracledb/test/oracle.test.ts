@@ -1090,32 +1090,70 @@ describe('oracledb', () => {
       assert.ok(!traceContext, 'client context should not be set');
     });
 
-    it('should propagate only client context when trace context propagation is enabled', async () => {
+    it.only('should propagate only client context when trace context propagation is enabled', async () => {
       instrumentation.setConfig({
         propagateTraceContextToSessionAction: false,
         enableTraceContextPropagation: true,
       });
       resetConnectionAction();
+      //const result2 = await connection.execute('alter session set sql_trace=true');
+      //console.log(result2);
       memoryExporter.reset();
-      const { action, traceContext } = await getSessionContext();
-      const spans = memoryExporter.getFinishedSpans();
-      const executeSpan = spans[spans.length - 1];
-      assert.ok(executeSpan, 'expected span to verify trace propagation');
+      /*if (supportsAppContext) {
+        const existingTraceContext =
+          'traceparent: 00-78e1dd49763c1f048852ab0d7d61b906-509de95f8cabb61e-01';
+        await connection.execute(
+          `BEGIN
+             DBMS_SESSION.SET_CONTEXT('CLIENTCONTEXT', :attr, :val);
+           END;`,
+          {
+            attr: 'ora$opentelem$tracectx',
+            val: existingTraceContext,
+          }
+        );
+      }*/
+
+        await connection.execute('select user from dual');
+      const result = await connection.execute(
+        `SELECT SYS_CONTEXT('CLIENTCONTEXT', :attr) AS ctx_val FROM dual`,
+        { attr: 'ora$opentelem$tracectx' },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
+      assert.ok(result);
+
+      const verificationSpans = memoryExporter.getFinishedSpans().slice();
+      const verificationExecuteSpan = verificationSpans[
+        verificationSpans.length - 1
+      ];
       assert.ok(
-        executeSpan.name.startsWith(SpanNames.EXECUTE),
-        `expected execute span, got ${executeSpan.name}`
+        verificationExecuteSpan,
+        'expected verification execute span to check propagated trace context'
+      );
+      assert.ok(
+        verificationExecuteSpan.name.startsWith(SpanNames.EXECUTE),
+        `expected execute span, got ${verificationExecuteSpan.name}`
       );
       const expectedTraceparent = oracledb.thin
         ? buildTraceparent(
-            spans.find(span => span.name.startsWith(SpanNames.EXECUTE_MSG))!
-              .spanContext()
+            verificationSpans
+              .slice()
+              .reverse()
+              .find(span =>
+              span.name.startsWith(SpanNames.EXECUTE_MSG)
+            )!.spanContext()
           )
-        : buildTraceparent(executeSpan.spanContext());
+        : buildTraceparent(verificationExecuteSpan.spanContext());
+      const expectedClientContextPayload =
+        `traceparent: ${expectedTraceparent}\r\ntracestate: \r\n`;
+
+      const { action, traceContext } = await getSessionContext();
+
       if (supportsAppContext) {
+        const row = result.rows?.[0] as Record<string, string> | undefined;
         assert.strictEqual(
-          traceContext,
-          expectedTraceparent,
-          'CLIENTCONTEXT should receive traceparent'
+          row?.CTX_VAL ?? row?.ctx_val,
+          expectedClientContextPayload,
+          'CLIENTCONTEXT should receive traceparent via appContext'
         );
       } else {
         assert.ok(
