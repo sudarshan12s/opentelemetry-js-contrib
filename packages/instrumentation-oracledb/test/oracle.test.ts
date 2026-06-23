@@ -16,6 +16,7 @@ import {
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
 import * as testUtils from '@opentelemetry/contrib-test-utils';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+import { resourceFromAttributes } from '@opentelemetry/resources';
 import {
   BasicTracerProvider,
   InMemorySpanExporter,
@@ -40,6 +41,7 @@ import {
   ATTR_EXCEPTION_MESSAGE,
   ATTR_EXCEPTION_STACKTRACE,
   ATTR_EXCEPTION_TYPE,
+  ATTR_SERVICE_NAME,
 } from '@opentelemetry/semantic-conventions';
 
 import {
@@ -54,6 +56,10 @@ const memoryExporter = new InMemorySpanExporter();
 const collectorEndpoint =
   process.env.ORACLE_TEST_OTLP_TRACES_ENDPOINT ||
   process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+const testServiceName =
+  process.env.ORACLE_TEST_SERVICE_NAME ||
+  process.env.OTEL_SERVICE_NAME ||
+  'test_oracledb';
 
 function getCollectorTracesEndpoint(endpoint: string): string {
   const url = new URL(endpoint);
@@ -83,6 +89,9 @@ function getSpanProcessors(): SpanProcessor[] {
 
 let contextManager: AsyncLocalStorageContextManager;
 const provider = new BasicTracerProvider({
+  resource: resourceFromAttributes({
+    [ATTR_SERVICE_NAME]: testServiceName,
+  }),
   spanProcessors: getSpanProcessors(),
 });
 const tracer = provider.getTracer('external');
@@ -1090,7 +1099,7 @@ describe('oracledb', () => {
       assert.ok(!traceContext, 'client context should not be set');
     });
 
-    it.only('should propagate only client context when trace context propagation is enabled', async () => {
+    it('should propagate only client context when trace context propagation is enabled', async () => {
       instrumentation.setConfig({
         propagateTraceContextToSessionAction: false,
         enableTraceContextPropagation: true,
