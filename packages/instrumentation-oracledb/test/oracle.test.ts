@@ -11,13 +11,17 @@ import {
   Span,
   SpanKind,
   SpanStatus,
+  SpanContext,
   trace,
 } from '@opentelemetry/api';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
 import * as testUtils from '@opentelemetry/contrib-test-utils';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+import { resourceFromAttributes } from '@opentelemetry/resources';
 import {
   BasicTracerProvider,
   InMemorySpanExporter,
+  SpanProcessor,
   SimpleSpanProcessor,
   ReadableSpan,
   TimedEvent,
@@ -38,18 +42,58 @@ import {
   ATTR_EXCEPTION_MESSAGE,
   ATTR_EXCEPTION_STACKTRACE,
   ATTR_EXCEPTION_TYPE,
+  ATTR_SERVICE_NAME,
 } from '@opentelemetry/semantic-conventions';
 
 import {
   ATTR_DB_OPERATION_PARAMETER,
-  ATTR_DB_USER,
+  ATTR_ORACLE_DB_INSTANCE_NAME,
+  ATTR_ORACLE_DB_NAME,
+  ATTR_ORACLE_DB_SERVICE,
   DB_SYSTEM_NAME_VALUE_ORACLE_DB,
 } from '../src/semconv';
 
 const memoryExporter = new InMemorySpanExporter();
+const collectorEndpoint =
+  process.env.ORACLE_TEST_OTLP_TRACES_ENDPOINT ||
+  process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+const testServiceName =
+  process.env.ORACLE_TEST_SERVICE_NAME ||
+  process.env.OTEL_SERVICE_NAME ||
+  'test_oracledb';
+
+function getCollectorTracesEndpoint(endpoint: string): string {
+  const url = new URL(endpoint);
+  if (url.pathname === '/' || url.pathname === '') {
+    url.pathname = '/v1/traces';
+  }
+  return url.toString();
+}
+
+function getSpanProcessors(): SpanProcessor[] {
+  const processors: SpanProcessor[] = [
+    new SimpleSpanProcessor(memoryExporter),
+  ];
+
+  if (collectorEndpoint) {
+    processors.push(
+      new SimpleSpanProcessor(
+        new OTLPTraceExporter({
+          url: getCollectorTracesEndpoint(collectorEndpoint),
+        })
+      )
+    );
+  }
+
+  return processors;
+}
+
 let contextManager: AsyncLocalStorageContextManager;
 const provider = new BasicTracerProvider({
-  spanProcessors: [new SimpleSpanProcessor(memoryExporter)],
+  resource: resourceFromAttributes({
+    [ATTR_SERVICE_NAME]: testServiceName,
+  }),
+  spanProcessors: getSpanProcessors(),
 });
 const tracer = provider.getTracer('external');
 const instrumentation = new OracleInstrumentation();
@@ -67,8 +111,8 @@ let numExecSpans = 2; // Default number of Spans created for Execute API in thin
 let numConnSpans = 2; // Default number of spans created during connection establishment.
 let poolMinSpanCount = 1; // number of spans created for createPool considering poolMin.
 const CONFIG = {
-  user: process.env.ORACLE_USER || 'demo',
-  password: process.env.ORACLE_PASSWORD || 'demo',
+  user: process.env.ORACLE_USER || 'vector',
+  password: process.env.ORACLE_PASSWORD || 'vector',
   connectString: process.env.ORACLE_CONNECTSTRING || 'localhost:1521/freepdb1',
 };
 const POOL_CONFIG = {
@@ -104,17 +148,16 @@ let attributesWithSensitiveDataBindsByName: Record<
 let connAttributes: Record<string, string | number>; // connection related span attributes.
 let poolAttributes: Record<string, string | number>; // pool related span attributes.
 let connAttrList: Record<string, string | number>[]; // attributes per span during connection establishment.
-let spanNameSuffix: string; // SpanName will be <operationName serviceName>
+let spanNameSuffix: string; // SpanName will be <operationName db.namespace>
 let failedConnAttrList: Record<string, string | number>[]; // attributes in span for failed connection.
 let poolConnAttrList: Record<string, string | number>[]; // attributes per span when connection established from pool.
 let spanNamesList: string[]; // span names for roundtrips and public API spans.
 
 const DEFAULT_ATTRIBUTES = {
   [ATTR_DB_SYSTEM_NAME]: DB_SYSTEM_NAME_VALUE_ORACLE_DB,
-  [ATTR_DB_NAMESPACE]: serviceName,
+  [ATTR_ORACLE_DB_SERVICE]: serviceName,
   [ATTR_SERVER_ADDRESS]: hostname,
   [ATTR_SERVER_PORT]: pno,
-  [ATTR_DB_USER]: CONFIG.user,
   [ATTR_NETWORK_TRANSPORT]: 'TCP',
 };
 
@@ -122,18 +165,15 @@ const DEFAULT_ATTRIBUTES = {
 // hostname, port and protocol.
 const DEFAULT_ATTRIBUTES_THICK = {
   [ATTR_DB_SYSTEM_NAME]: DB_SYSTEM_NAME_VALUE_ORACLE_DB,
-  [ATTR_DB_NAMESPACE]: serviceName,
-  [ATTR_DB_USER]: CONFIG.user,
+  [ATTR_ORACLE_DB_SERVICE]: serviceName,
 };
 
 const POOL_ATTRIBUTES = {
   [ATTR_DB_SYSTEM_NAME]: DB_SYSTEM_NAME_VALUE_ORACLE_DB,
-  [ATTR_DB_USER]: CONFIG.user,
 };
 
 const CONN_FAILED_ATTRIBUTES = {
   [ATTR_DB_SYSTEM_NAME]: DB_SYSTEM_NAME_VALUE_ORACLE_DB,
-  [ATTR_DB_USER]: CONFIG.user,
 };
 
 const unsetStatus: SpanStatus = {
@@ -166,6 +206,7 @@ if (process.env.NODE_ORACLEDB_DRIVER_MODE === 'thick') {
 // Additionally, adjusts the number of roundtrip spans based on the database version.
 function updateAttrSpanList(connection: oracledb.Connection) {
   serverVersion = connection.oracleServerVersion;
+  const resolvedConnectMetadataAvailableDuringHandshake = oracledb.version < 70000;
 
   let attributes: Record<string, string | number>;
   if (oracledb.thin) {
@@ -177,7 +218,21 @@ function updateAttrSpanList(connection: oracledb.Connection) {
     attributes = { ...DEFAULT_ATTRIBUTES_THICK };
     numExecSpans = 1;
   }
-  attributes[ATTR_DB_NAMESPACE] = `||${connection.serviceName}`;
+  if (resolvedConnectMetadataAvailableDuringHandshake && connection.dbName) {
+    attributes[ATTR_ORACLE_DB_NAME] = connection.dbName;
+  }
+  if (
+    resolvedConnectMetadataAvailableDuringHandshake &&
+    connection.serviceName
+  ) {
+    attributes[ATTR_ORACLE_DB_SERVICE] = connection.serviceName;
+  }
+  if (
+    resolvedConnectMetadataAvailableDuringHandshake &&
+    (connection as any).dbUniqueName
+  ) {
+    attributes[ATTR_DB_NAMESPACE] = `${(connection as any).dbUniqueName}`;
+  }
 
   // initialize the span attributes list.
   connAttrList = [];
@@ -288,10 +343,6 @@ function checkRoundTripSpans(
   }
 }
 
-function getDBNameSpace(instanceName = '', pdbName = '', servicename = '') {
-  return [instanceName, pdbName, servicename].join('|');
-}
-
 // It verifies the spans, its attributes and the parent child relationship.
 function verifySpans(
   parentSpan: Span | null,
@@ -396,6 +447,7 @@ const sqlCreateTable = async function (
 
 describe('oracledb', () => {
   let connection: oracledb.Connection;
+  let supportsAppContext = false;
 
   const testOracleDB = process.env.RUN_ORACLEDB_TESTS; // For CI: assumes local oracledb is already available
   const shouldTest = testOracleDB; // Skips these tests if false (default)
@@ -408,12 +460,47 @@ describe('oracledb', () => {
   const bindsByName = {
     name: { val: '0', type: oracledb.STRING, dir: oracledb.BIND_IN },
   };
+  const resetConnectionAction = () => {
+    try {
+      if (connection && typeof (connection as any).action !== 'undefined') {
+        (connection as any).action = '';
+      }
+      if (supportsAppContext) {
+        (connection as any).appContext('CLIENTCONTEXT', [
+          { ORA$OPENTELEM$TRACECTX: '' },
+        ]);
+      }
+    } catch {
+      // Ignore cleanup errors when resetting session propagation state.
+    }
+  };
+  const buildExpectedClientContextPayload = (spanContext: SpanContext) => {
+    const traceparent = buildTraceparent(spanContext);
+    const tracestate = spanContext.traceState?.serialize() ?? '';
+    return `traceparent: ${traceparent}\r\ntracestate: ${tracestate}\r\n`;
+  };
+  const getSessionContext = async () => {
+    const result = await connection.execute(
+      "select sys_context('USERENV', 'ACTION') as action, sys_context('CLIENTCONTEXT', 'ORA$OPENTELEM$TRACECTX') as trace_ctx, sys_context('CLIENTCONTEXT', 'ora$opentelem$tracectx') as trace_ctx_lower from dual",
+      [],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+    const row = result.rows?.[0] as Record<string, string> | undefined;
+    const actionValue = row?.ACTION ?? row?.action;
+    const traceCtxValue =
+      row?.TRACE_CTX ??
+      row?.trace_ctx ??
+      row?.TRACECONTEXT ??
+      row?.tracecontext ??
+      row?.TRACE_CTX_LOWER ??
+      row?.trace_ctx_lower;
+    return { action: actionValue, traceContext: traceCtxValue };
+  };
   const tableName = 'oracledb_ot_execute_test';
   const sqlCreate = `create table ${tableName} (id NUMBER, val VARCHAR2(100), clobval CLOB)`;
 
   async function doSetup() {
     const extendedConn: any = connection;
-    let dbName;
 
     if (oracledb.thin) {
       connAttributes = { ...DEFAULT_ATTRIBUTES };
@@ -430,15 +517,17 @@ describe('oracledb', () => {
       connAttributes[ATTR_NETWORK_TRANSPORT] = extendedConn.protocol;
     }
     if (connection.dbName) {
-      dbName = oracledb.thin
+      connAttributes[ATTR_ORACLE_DB_NAME] = oracledb.thin
         ? connection.dbName.toUpperCase()
         : connection.dbName;
     }
-    connAttributes[ATTR_DB_NAMESPACE] = getDBNameSpace(
-      connection.instanceName,
-      dbName,
-      connection.serviceName
-    );
+    if (connection.instanceName) {
+      connAttributes[ATTR_ORACLE_DB_INSTANCE_NAME] = connection.instanceName;
+    }
+    if (connection.serviceName) {
+      connAttributes[ATTR_ORACLE_DB_SERVICE] = connection.serviceName;
+    }
+    connAttributes[ATTR_DB_NAMESPACE] = (connection as any).dbUniqueName;
     poolAttributes = { ...connAttributes, ...POOL_ATTRIBUTES };
 
     executeAttributes = {
@@ -486,6 +575,8 @@ describe('oracledb', () => {
     }
 
     connection = await oracledb.getConnection(CONFIG);
+    supportsAppContext =
+      typeof (connection as any)?.appContext === 'function';
     await doSetup();
     updateAttrSpanList(connection);
     contextManager = new AsyncLocalStorageContextManager().enable();
@@ -499,6 +590,7 @@ describe('oracledb', () => {
       await connection.execute(sqlDropTable(tableName));
       await connection.close();
     }
+    await provider.forceFlush();
     instrumentation.disable();
   });
 
@@ -510,11 +602,13 @@ describe('oracledb', () => {
   afterEach(async () => {
     memoryExporter.reset();
     context.disable();
+    resetConnectionAction();
     instrumentation.enable();
     instrumentation.setConfig({
       enhancedDatabaseReporting: false,
       dbStatementDump: false,
       propagateTraceContextToSessionAction: false,
+      enableTraceContextPropagation: false,
     });
   });
 
@@ -966,15 +1060,14 @@ describe('oracledb', () => {
       });
     });
 
-    it('should propagate trace context via connection.action when enabled', async () => {
-      instrumentation.setConfig({ propagateTraceContextToSessionAction: true });
-      const result = await connection.execute(
-        "select sys_context('USERENV', 'ACTION') as action from dual",
-        [],
-        { outFormat: oracledb.OUT_FORMAT_OBJECT }
-      );
-      const row = result.rows?.[0] as Record<string, string> | undefined;
-      const actionValue = row?.ACTION;
+    it('should not propagate trace context when both propagation flags are disabled', async () => {
+      instrumentation.setConfig({
+        propagateTraceContextToSessionAction: false,
+        enableTraceContextPropagation: false,
+      });
+      resetConnectionAction();
+      memoryExporter.reset();
+      const { action, traceContext } = await getSessionContext();
       const spans = memoryExporter.getFinishedSpans();
       const executeSpan = spans[spans.length - 1];
       assert.ok(executeSpan, 'expected span to verify trace propagation');
@@ -983,7 +1076,190 @@ describe('oracledb', () => {
         `expected execute span, got ${executeSpan.name}`
       );
       const expectedTraceparent = buildTraceparent(executeSpan.spanContext());
-      assert.strictEqual(actionValue, expectedTraceparent);
+      assert.ok(!action, 'action should not be populated by default');
+      assert.ok(!traceContext, 'client context should not be populated');
+      assert.ok(expectedTraceparent);
+    });
+
+    it('should propagate only connection.action when session action propagation is enabled', async () => {
+      instrumentation.setConfig({
+        propagateTraceContextToSessionAction: true,
+        enableTraceContextPropagation: false,
+      });
+      resetConnectionAction();
+      memoryExporter.reset();
+      const { action, traceContext } = await getSessionContext();
+      const spans = memoryExporter.getFinishedSpans();
+      const executeSpan = spans[spans.length - 1];
+      assert.ok(executeSpan, 'expected span to verify trace propagation');
+      assert.ok(
+        executeSpan.name.startsWith(SpanNames.EXECUTE),
+        `expected execute span, got ${executeSpan.name}`
+      );
+      const expectedTraceparent = buildTraceparent(executeSpan.spanContext());
+      assert.strictEqual(
+        action,
+        expectedTraceparent,
+        'connection.action should receive traceparent'
+      );
+      assert.ok(!traceContext, 'client context should not be set');
+    });
+
+    it('should propagate only client context when trace context propagation is enabled', async () => {
+      instrumentation.setConfig({
+        propagateTraceContextToSessionAction: false,
+        enableTraceContextPropagation: true,
+      });
+      resetConnectionAction();
+      //const result2 = await connection.execute('alter session set sql_trace=true');
+      //console.log(result2);
+      memoryExporter.reset();
+      /*if (supportsAppContext) {
+        const existingTraceContext =
+          'traceparent: 00-78e1dd49763c1f048852ab0d7d61b906-509de95f8cabb61e-01';
+        await connection.execute(
+          `BEGIN
+             DBMS_SESSION.SET_CONTEXT('CLIENTCONTEXT', :attr, :val);
+           END;`,
+          {
+            attr: 'ora$opentelem$tracectx',
+            val: existingTraceContext,
+          }
+        );
+      }*/
+
+        await connection.execute('select user from dual');
+      const result = await connection.execute(
+        `SELECT SYS_CONTEXT('CLIENTCONTEXT', :attr) AS ctx_val FROM dual`,
+        { attr: 'ora$opentelem$tracectx' },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
+      assert.ok(result);
+
+      const verificationSpans = memoryExporter.getFinishedSpans().slice();
+      const verificationExecuteSpan = verificationSpans[
+        verificationSpans.length - 1
+      ];
+      assert.ok(
+        verificationExecuteSpan,
+        'expected verification execute span to check propagated trace context'
+      );
+      assert.ok(
+        verificationExecuteSpan.name.startsWith(SpanNames.EXECUTE),
+        `expected execute span, got ${verificationExecuteSpan.name}`
+      );
+      const expectedClientContextPayload = oracledb.thin
+        ? buildExpectedClientContextPayload(
+            verificationSpans
+              .slice()
+              .reverse()
+              .find(span =>
+              span.name.startsWith(SpanNames.EXECUTE_MSG)
+            )!.spanContext()
+          )
+        : buildExpectedClientContextPayload(
+            verificationExecuteSpan.spanContext()
+          );
+
+      const { action, traceContext } = await getSessionContext();
+
+      if (supportsAppContext) {
+        const row = result.rows?.[0] as Record<string, string> | undefined;
+        assert.strictEqual(
+          row?.CTX_VAL ?? row?.ctx_val,
+          expectedClientContextPayload,
+          'CLIENTCONTEXT should receive traceparent via appContext'
+        );
+      } else {
+        assert.ok(
+          !traceContext,
+          'CLIENTCONTEXT not supported; trace context should remain unset'
+        );
+      }
+      assert.ok(!action, 'connection.action should remain unset');
+    });
+
+    it('should not fail execute when client context propagation throws', async () => {
+      instrumentation.setConfig({
+        propagateTraceContextToSessionAction: false,
+        enableTraceContextPropagation: true,
+      });
+      const originalAppContext = (connection as any).appContext;
+      (connection as any).appContext = () => {
+        throw new Error('appContext failed');
+      };
+      try {
+        const result = await connection.execute(sql);
+        assert.ok(result);
+      } finally {
+        (connection as any).appContext = originalAppContext;
+      }
+    });
+
+    it('should propagate trace context to both connection.action and client context when both flags are enabled', async () => {
+      instrumentation.setConfig({
+        propagateTraceContextToSessionAction: true,
+        enableTraceContextPropagation: true,
+      });
+      resetConnectionAction();
+      memoryExporter.reset();
+      const { action, traceContext } = await getSessionContext();
+      const spans = memoryExporter.getFinishedSpans();
+      const executeSpan = spans[spans.length - 1];
+      assert.ok(executeSpan, 'expected span to verify trace propagation');
+      assert.ok(
+        executeSpan.name.startsWith(SpanNames.EXECUTE),
+        `expected execute span, got ${executeSpan.name}`
+      );
+      const expectedActionTraceparent = buildTraceparent(executeSpan.spanContext());
+      assert.strictEqual(
+        action,
+        expectedActionTraceparent,
+        'connection.action should receive traceparent'
+      );
+      if (supportsAppContext) {
+        const expectedClientContextPayload = oracledb.thin
+          ? buildExpectedClientContextPayload(
+              spans.find(span => span.name.startsWith(SpanNames.EXECUTE_MSG))!
+                .spanContext()
+            )
+          : buildExpectedClientContextPayload(executeSpan.spanContext());
+        assert.strictEqual(
+          traceContext,
+          expectedClientContextPayload,
+          'CLIENTCONTEXT should receive traceparent'
+        );
+      } else {
+        assert.ok(
+          !traceContext,
+          'CLIENTCONTEXT not supported; trace context should remain unset'
+        );
+      }
+    });
+
+    it('should propagate client context across internal round trips only in thin mode', async function () {
+      if (process.env.NODE_ORACLEDB_DRIVER_MODE === 'thick') {
+        this.skip();
+      }
+      instrumentation.setConfig({
+        propagateTraceContextToSessionAction: false,
+        enableTraceContextPropagation: true,
+      });
+      resetConnectionAction();
+      memoryExporter.reset();
+      const { traceContext } = await getSessionContext();
+      const executeMessageSpan = memoryExporter
+        .getFinishedSpans()
+        .find(span => span.name.startsWith(SpanNames.EXECUTE_MSG));
+      assert.ok(
+        executeMessageSpan,
+        'expected execute message span to verify roundtrip propagation'
+      );
+      assert.strictEqual(
+        traceContext,
+        buildExpectedClientContextPayload(executeMessageSpan.spanContext()),
+        'CLIENTCONTEXT should match the internal roundtrip span in thin mode'
+      );
     });
 
     it('should intercept connection.execute(sql, values) bind-by-name', async () => {
@@ -1317,6 +1593,10 @@ describe('oracledb', () => {
         { a: 5, b: 'Test 5 (Five)' },
       ];
       const sqlInsert = `INSERT INTO ${tableName} VALUES (:a, :b, 'clob')`;
+      const executeManyAttributes = {
+        ...connAttributes,
+        [ATTR_DB_OPERATION_NAME]: 'INSERT',
+      };
 
       await context.with(trace.setSpan(context.active(), span), async () => {
         const res = await connection.executeMany<Array<string>>(
@@ -1327,10 +1607,10 @@ describe('oracledb', () => {
           assert.ok(res);
           verifySpans(
             span,
-            [connAttributes, connAttributes],
+            [executeManyAttributes, executeManyAttributes],
             [
-              SpanNames.EXECUTE_MSG + ':' + spanNameSuffix,
-              SpanNames.EXECUTE_MANY + ':' + spanNameSuffix,
+              SpanNames.EXECUTE_MSG + ':INSERT' + spanNameSuffix,
+              SpanNames.EXECUTE_MANY + ':INSERT' + spanNameSuffix,
             ]
           );
         } catch (e: any) {
@@ -1352,15 +1632,19 @@ describe('oracledb', () => {
         { a: 5, b: 'Test 5 (Five)' },
       ];
       const sqlInsert = `INSERT INTO ${tableName} VALUES (:a, :b, 'clob')`;
+      const executeManyAttributes = {
+        ...connAttributes,
+        [ATTR_DB_OPERATION_NAME]: 'INSERT',
+      };
       const res = await connection.executeMany<Array<string>>(sqlInsert, binds);
       try {
         assert.ok(res);
         verifySpans(
           null,
-          [connAttributes, connAttributes],
+          [executeManyAttributes, executeManyAttributes],
           [
-            SpanNames.EXECUTE_MSG + ':' + spanNameSuffix,
-            SpanNames.EXECUTE_MANY + ':' + spanNameSuffix,
+            SpanNames.EXECUTE_MSG + ':INSERT' + spanNameSuffix,
+            SpanNames.EXECUTE_MANY + ':INSERT' + spanNameSuffix,
           ]
         );
       } catch (e: any) {

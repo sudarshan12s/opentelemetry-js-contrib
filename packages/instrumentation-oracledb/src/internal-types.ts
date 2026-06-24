@@ -12,6 +12,8 @@ import { SpanConnectionConfig } from './types';
 // received in onExitFn to end the span.
 export interface InstrumentationContext {
   span: api.Span;
+  traceParent?: string;
+  traceState?: string;
 }
 
 // Captures the entire span data.
