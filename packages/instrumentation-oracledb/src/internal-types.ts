@@ -13,6 +13,7 @@ import { SpanConnectionConfig } from './types';
 export interface InstrumentationContext {
   span: api.Span;
   traceParent?: string;
+  traceState?: string;
 }
 
 // Captures the entire span data.

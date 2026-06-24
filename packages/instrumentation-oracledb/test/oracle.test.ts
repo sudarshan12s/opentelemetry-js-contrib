@@ -11,6 +11,7 @@ import {
   Span,
   SpanKind,
   SpanStatus,
+  SpanContext,
   trace,
 } from '@opentelemetry/api';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
@@ -466,12 +467,17 @@ describe('oracledb', () => {
       }
       if (supportsAppContext) {
         (connection as any).appContext('CLIENTCONTEXT', [
-          { ora$opentelem$tracectx: '' },
+          { ORA$OPENTELEM$TRACECTX: '' },
         ]);
       }
     } catch {
       // Ignore cleanup errors when resetting session propagation state.
     }
+  };
+  const buildExpectedClientContextPayload = (spanContext: SpanContext) => {
+    const traceparent = buildTraceparent(spanContext);
+    const tracestate = spanContext.traceState?.serialize() ?? '';
+    return `traceparent: ${traceparent}\r\ntracestate: ${tracestate}\r\n`;
   };
   const getSessionContext = async () => {
     const result = await connection.execute(
@@ -1142,8 +1148,8 @@ describe('oracledb', () => {
         verificationExecuteSpan.name.startsWith(SpanNames.EXECUTE),
         `expected execute span, got ${verificationExecuteSpan.name}`
       );
-      const expectedTraceparent = oracledb.thin
-        ? buildTraceparent(
+      const expectedClientContextPayload = oracledb.thin
+        ? buildExpectedClientContextPayload(
             verificationSpans
               .slice()
               .reverse()
@@ -1151,9 +1157,9 @@ describe('oracledb', () => {
               span.name.startsWith(SpanNames.EXECUTE_MSG)
             )!.spanContext()
           )
-        : buildTraceparent(verificationExecuteSpan.spanContext());
-      const expectedClientContextPayload =
-        `traceparent: ${expectedTraceparent}\r\ntracestate: \r\n`;
+        : buildExpectedClientContextPayload(
+            verificationExecuteSpan.spanContext()
+          );
 
       const { action, traceContext } = await getSessionContext();
 
@@ -1212,15 +1218,15 @@ describe('oracledb', () => {
         'connection.action should receive traceparent'
       );
       if (supportsAppContext) {
-        const expectedClientContextTraceparent = oracledb.thin
-          ? buildTraceparent(
+        const expectedClientContextPayload = oracledb.thin
+          ? buildExpectedClientContextPayload(
               spans.find(span => span.name.startsWith(SpanNames.EXECUTE_MSG))!
                 .spanContext()
             )
-          : expectedActionTraceparent;
+          : buildExpectedClientContextPayload(executeSpan.spanContext());
         assert.strictEqual(
           traceContext,
-          expectedClientContextTraceparent,
+          expectedClientContextPayload,
           'CLIENTCONTEXT should receive traceparent'
         );
       } else {
@@ -1251,7 +1257,7 @@ describe('oracledb', () => {
       );
       assert.strictEqual(
         traceContext,
-        buildTraceparent(executeMessageSpan.spanContext()),
+        buildExpectedClientContextPayload(executeMessageSpan.spanContext()),
         'CLIENTCONTEXT should match the internal roundtrip span in thin mode'
       );
     });

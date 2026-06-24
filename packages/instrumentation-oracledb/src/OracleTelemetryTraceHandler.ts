@@ -402,9 +402,9 @@ export function getOracleTelemetryTraceHandlerClass(
             traceContext.operation === SpanNames.EXECUTE_MANY)
         ) {
           const connection = traceContext.additionalConfig?.self;
-          const traceparent = buildTraceparent(
-            traceContext.userContext.span.spanContext()
-          );
+          const spanContext = traceContext.userContext.span.spanContext();
+          const traceparent = buildTraceparent(spanContext);
+          const tracestate = spanContext.traceState?.serialize() ?? '';
 
           if (
             connection &&
@@ -422,7 +422,7 @@ export function getOracleTelemetryTraceHandlerClass(
                 connection.appContext('CLIENTCONTEXT', [
                   {
                     ORA$OPENTELEM$TRACECTX:
-                      `traceparent: ${traceparent}\r\ntracestate: \r\n`,
+                      `traceparent: ${traceparent}\r\ntracestate: ${tracestate}\r\n`,
                   },
                 ]);
 
@@ -506,11 +506,12 @@ export function getOracleTelemetryTraceHandlerClass(
         }),
       };
       if (this._shouldPropagateTraceContext()) {
-        const traceparent = buildTraceparent(
-          traceContext.userContext.span.spanContext()
-        );
+        const spanContext = traceContext.userContext.span.spanContext();
+        const traceparent = buildTraceparent(spanContext);
         if (traceparent) {
           traceContext.userContext.traceParent = traceparent;
+          traceContext.userContext.traceState =
+            spanContext.traceState?.serialize() ?? '';
         }
       }
     }
