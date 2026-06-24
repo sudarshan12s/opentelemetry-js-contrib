@@ -117,6 +117,28 @@ export function getOracleTelemetryTraceHandlerClass(
       return hasAppContext;
     }
 
+    private _setConnectionTracingFlag(
+      connection: unknown,
+      enabled: boolean
+    ): void {
+      if (
+        !connection ||
+        !('databaseOpenTelemetryTracing' in (connection as object))
+      ) {
+        return;
+      }
+      try {
+        (
+          connection as { databaseOpenTelemetryTracing: boolean }
+        ).databaseOpenTelemetryTracing = enabled;
+      } catch (err) {
+        diag.debug(
+          'Failed to set connection.databaseOpenTelemetryTracing for trace propagation',
+          err
+        );
+      }
+    }
+
     // Returns the connection related Attributes for
     // semantic standards and module custom keys.
     private _getConnectionSpanAttributes(config: SpanConnectionConfig) {
@@ -388,18 +410,20 @@ export function getOracleTelemetryTraceHandlerClass(
             connection &&
             traceparent
           ) {
+            this._setConnectionTracingFlag(
+              connection,
+              shouldPropagateTraceContext
+            );
             if (
               shouldPropagateTraceContext &&
               this._canUseAppContext(connection)
             ) {
-              this.enableTracing();
               try {
                 connection.appContext('CLIENTCONTEXT', [
                   {
                     ORA$OPENTELEM$TRACECTX:
                       `traceparent: ${traceparent}\r\ntracestate: \r\n`,
                   },
-                  {'SERVER_DISTRIBUTED_TRACE_MODE': 'APPLICATION'},
                 ]);
 
               } catch (err) {
@@ -408,8 +432,6 @@ export function getOracleTelemetryTraceHandlerClass(
                   err
                 );
               }
-            } else {
-              this.disableTracing();
             }
             if (shouldSetConnectionAction && 'action' in connection) {
               try {
@@ -445,6 +467,15 @@ export function getOracleTelemetryTraceHandlerClass(
       if (!traceContext.userContext?.span) {
         return;
       }
+      if (
+        traceContext.operation === SpanNames.EXECUTE ||
+        traceContext.operation === SpanNames.EXECUTE_MANY
+      ) {
+        this._setConnectionTracingFlag(
+          traceContext.additionalConfig?.self,
+          false
+        );
+      }
       this._updateFinalSpanAttributes(traceContext);
       switch (traceContext.operation) {
         case SpanNames.EXECUTE:
@@ -475,15 +506,12 @@ export function getOracleTelemetryTraceHandlerClass(
         }),
       };
       if (this._shouldPropagateTraceContext()) {
-        this.enableTracing();
         const traceparent = buildTraceparent(
           traceContext.userContext.span.spanContext()
         );
         if (traceparent) {
           traceContext.userContext.traceParent = traceparent;
         }
-      } else {
-        this.disableTracing();
       }
     }
 
