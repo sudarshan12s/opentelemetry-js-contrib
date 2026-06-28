@@ -42,7 +42,11 @@ import {
 
 import {
   ATTR_DB_OPERATION_PARAMETER,
-  ATTR_DB_USER,
+  ATTR_ORACLE_DB_DOMAIN,
+  ATTR_ORACLE_DB_INSTANCE_NAME,
+  ATTR_ORACLE_DB_NAME,
+  ATTR_ORACLE_DB_PDB,
+  ATTR_ORACLE_DB_SERVICE,
   DB_SYSTEM_NAME_VALUE_ORACLE_DB,
 } from '../src/semconv';
 
@@ -67,8 +71,8 @@ let numExecSpans = 2; // Default number of Spans created for Execute API in thin
 let numConnSpans = 2; // Default number of spans created during connection establishment.
 let poolMinSpanCount = 1; // number of spans created for createPool considering poolMin.
 const CONFIG = {
-  user: process.env.ORACLE_USER || 'demo',
-  password: process.env.ORACLE_PASSWORD || 'demo',
+  user: process.env.ORACLE_USER || 'vector',
+  password: process.env.ORACLE_PASSWORD || 'vector',
   connectString: process.env.ORACLE_CONNECTSTRING || 'localhost:1521/freepdb1',
 };
 const POOL_CONFIG = {
@@ -104,17 +108,16 @@ let attributesWithSensitiveDataBindsByName: Record<
 let connAttributes: Record<string, string | number>; // connection related span attributes.
 let poolAttributes: Record<string, string | number>; // pool related span attributes.
 let connAttrList: Record<string, string | number>[]; // attributes per span during connection establishment.
-let spanNameSuffix: string; // SpanName will be <operationName serviceName>
+let spanNameSuffix: string; // SpanName will be <operationName db.namespace>
 let failedConnAttrList: Record<string, string | number>[]; // attributes in span for failed connection.
 let poolConnAttrList: Record<string, string | number>[]; // attributes per span when connection established from pool.
 let spanNamesList: string[]; // span names for roundtrips and public API spans.
 
 const DEFAULT_ATTRIBUTES = {
   [ATTR_DB_SYSTEM_NAME]: DB_SYSTEM_NAME_VALUE_ORACLE_DB,
-  [ATTR_DB_NAMESPACE]: serviceName,
+  [ATTR_ORACLE_DB_SERVICE]: serviceName,
   [ATTR_SERVER_ADDRESS]: hostname,
   [ATTR_SERVER_PORT]: pno,
-  [ATTR_DB_USER]: CONFIG.user,
   [ATTR_NETWORK_TRANSPORT]: 'TCP',
 };
 
@@ -122,18 +125,15 @@ const DEFAULT_ATTRIBUTES = {
 // hostname, port and protocol.
 const DEFAULT_ATTRIBUTES_THICK = {
   [ATTR_DB_SYSTEM_NAME]: DB_SYSTEM_NAME_VALUE_ORACLE_DB,
-  [ATTR_DB_NAMESPACE]: serviceName,
-  [ATTR_DB_USER]: CONFIG.user,
+  [ATTR_ORACLE_DB_SERVICE]: serviceName,
 };
 
 const POOL_ATTRIBUTES = {
   [ATTR_DB_SYSTEM_NAME]: DB_SYSTEM_NAME_VALUE_ORACLE_DB,
-  [ATTR_DB_USER]: CONFIG.user,
 };
 
 const CONN_FAILED_ATTRIBUTES = {
   [ATTR_DB_SYSTEM_NAME]: DB_SYSTEM_NAME_VALUE_ORACLE_DB,
-  [ATTR_DB_USER]: CONFIG.user,
 };
 
 const unsetStatus: SpanStatus = {
@@ -166,6 +166,8 @@ if (process.env.NODE_ORACLEDB_DRIVER_MODE === 'thick') {
 // Additionally, adjusts the number of roundtrip spans based on the database version.
 function updateAttrSpanList(connection: oracledb.Connection) {
   serverVersion = connection.oracleServerVersion;
+  const extendedConnection = connection as any;
+  const resolvedConnectMetadataAvailableDuringHandshake = oracledb.version < 70000;
 
   let attributes: Record<string, string | number>;
   if (oracledb.thin) {
@@ -177,7 +179,33 @@ function updateAttrSpanList(connection: oracledb.Connection) {
     attributes = { ...DEFAULT_ATTRIBUTES_THICK };
     numExecSpans = 1;
   }
-  attributes[ATTR_DB_NAMESPACE] = `||${connection.serviceName}`;
+  if (resolvedConnectMetadataAvailableDuringHandshake && connection.dbName) {
+    attributes[ATTR_ORACLE_DB_NAME] = connection.dbName;
+  }
+  if (
+    resolvedConnectMetadataAvailableDuringHandshake &&
+    extendedConnection.domainName
+  ) {
+    attributes[ATTR_ORACLE_DB_DOMAIN] = extendedConnection.domainName;
+  }
+  if (
+    resolvedConnectMetadataAvailableDuringHandshake &&
+    extendedConnection.pdbName
+  ) {
+    attributes[ATTR_ORACLE_DB_PDB] = extendedConnection.pdbName;
+  }
+  if (
+    resolvedConnectMetadataAvailableDuringHandshake &&
+    connection.serviceName
+  ) {
+    attributes[ATTR_ORACLE_DB_SERVICE] = connection.serviceName;
+  }
+  if (
+    resolvedConnectMetadataAvailableDuringHandshake &&
+    extendedConnection.dbUniqueName
+  ) {
+    attributes[ATTR_DB_NAMESPACE] = `${extendedConnection.dbUniqueName}`;
+  }
 
   // initialize the span attributes list.
   connAttrList = [];
@@ -286,10 +314,6 @@ function checkRoundTripSpans(
       statusList[index]
     );
   }
-}
-
-function getDBNameSpace(instanceName = '', pdbName = '', servicename = '') {
-  return [instanceName, pdbName, servicename].join('|');
 }
 
 // It verifies the spans, its attributes and the parent child relationship.
@@ -413,7 +437,6 @@ describe('oracledb', () => {
 
   async function doSetup() {
     const extendedConn: any = connection;
-    let dbName;
 
     if (oracledb.thin) {
       connAttributes = { ...DEFAULT_ATTRIBUTES };
@@ -430,15 +453,23 @@ describe('oracledb', () => {
       connAttributes[ATTR_NETWORK_TRANSPORT] = extendedConn.protocol;
     }
     if (connection.dbName) {
-      dbName = oracledb.thin
+      connAttributes[ATTR_ORACLE_DB_NAME] = oracledb.thin
         ? connection.dbName.toUpperCase()
         : connection.dbName;
     }
-    connAttributes[ATTR_DB_NAMESPACE] = getDBNameSpace(
-      connection.instanceName,
-      dbName,
-      connection.serviceName
-    );
+    if (extendedConn.domainName) {
+      connAttributes[ATTR_ORACLE_DB_DOMAIN] = extendedConn.domainName;
+    }
+    if (connection.instanceName) {
+      connAttributes[ATTR_ORACLE_DB_INSTANCE_NAME] = connection.instanceName;
+    }
+    if (extendedConn.pdbName) {
+      connAttributes[ATTR_ORACLE_DB_PDB] = extendedConn.pdbName;
+    }
+    if (connection.serviceName) {
+      connAttributes[ATTR_ORACLE_DB_SERVICE] = connection.serviceName;
+    }
+    connAttributes[ATTR_DB_NAMESPACE] = extendedConn.dbUniqueName;
     poolAttributes = { ...connAttributes, ...POOL_ATTRIBUTES };
 
     executeAttributes = {
@@ -1317,6 +1348,10 @@ describe('oracledb', () => {
         { a: 5, b: 'Test 5 (Five)' },
       ];
       const sqlInsert = `INSERT INTO ${tableName} VALUES (:a, :b, 'clob')`;
+      const executeManyAttributes = {
+        ...connAttributes,
+        [ATTR_DB_OPERATION_NAME]: 'INSERT',
+      };
 
       await context.with(trace.setSpan(context.active(), span), async () => {
         const res = await connection.executeMany<Array<string>>(
@@ -1327,10 +1362,10 @@ describe('oracledb', () => {
           assert.ok(res);
           verifySpans(
             span,
-            [connAttributes, connAttributes],
+            [executeManyAttributes, executeManyAttributes],
             [
-              SpanNames.EXECUTE_MSG + ':' + spanNameSuffix,
-              SpanNames.EXECUTE_MANY + ':' + spanNameSuffix,
+              SpanNames.EXECUTE_MSG + ':INSERT' + spanNameSuffix,
+              SpanNames.EXECUTE_MANY + ':INSERT' + spanNameSuffix,
             ]
           );
         } catch (e: any) {
@@ -1352,15 +1387,19 @@ describe('oracledb', () => {
         { a: 5, b: 'Test 5 (Five)' },
       ];
       const sqlInsert = `INSERT INTO ${tableName} VALUES (:a, :b, 'clob')`;
+      const executeManyAttributes = {
+        ...connAttributes,
+        [ATTR_DB_OPERATION_NAME]: 'INSERT',
+      };
       const res = await connection.executeMany<Array<string>>(sqlInsert, binds);
       try {
         assert.ok(res);
         verifySpans(
           null,
-          [connAttributes, connAttributes],
+          [executeManyAttributes, executeManyAttributes],
           [
-            SpanNames.EXECUTE_MSG + ':' + spanNameSuffix,
-            SpanNames.EXECUTE_MANY + ':' + spanNameSuffix,
+            SpanNames.EXECUTE_MSG + ':INSERT' + spanNameSuffix,
+            SpanNames.EXECUTE_MANY + ':INSERT' + spanNameSuffix,
           ]
         );
       } catch (e: any) {
