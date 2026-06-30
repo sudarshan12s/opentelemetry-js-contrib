@@ -15,6 +15,7 @@ import {
 } from '@opentelemetry/api';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
 import * as testUtils from '@opentelemetry/contrib-test-utils';
+import { SemconvStability } from '@opentelemetry/instrumentation';
 import {
   BasicTracerProvider,
   InMemorySpanExporter,
@@ -25,7 +26,10 @@ import {
 import * as assert from 'assert';
 import { OracleInstrumentation } from '../src';
 import { SpanNames } from '../src/constants';
-import { buildTraceparent } from '../src/OracleTelemetryTraceHandler';
+import {
+  buildTraceparent,
+  getOracleTelemetryTraceHandlerClass,
+} from '../src/OracleTelemetryTraceHandler';
 
 import {
   ATTR_DB_NAMESPACE,
@@ -42,6 +46,7 @@ import {
 
 import {
   ATTR_DB_OPERATION_PARAMETER,
+  ATTR_DB_USER,
   ATTR_ORACLE_DB_DOMAIN,
   ATTR_ORACLE_DB_INSTANCE_NAME,
   ATTR_ORACLE_DB_NAME,
@@ -49,6 +54,8 @@ import {
   ATTR_ORACLE_DB_SERVICE,
   DB_SYSTEM_NAME_VALUE_ORACLE_DB,
 } from '../src/semconv';
+
+process.env.OTEL_SEMCONV_STABILITY_OPT_IN = 'database';
 
 const memoryExporter = new InMemorySpanExporter();
 let contextManager: AsyncLocalStorageContextManager;
@@ -61,6 +68,19 @@ instrumentation.enable();
 instrumentation.disable();
 
 import * as oracledb from 'oracledb';
+
+function createTestTraceHandler(dbSemconvStability: SemconvStability) {
+  const TraceHandler = getOracleTelemetryTraceHandlerClass({
+    traceHandler: {
+      TraceHandlerBase: class {
+        enable() {}
+      },
+    },
+  } as any);
+  return new TraceHandler(() => tracer, {
+    dbSemconvStability,
+  });
+}
 
 const VER_23_4 = 2304000000;
 const hostname = 'localhost';
@@ -417,6 +437,66 @@ const sqlCreateTable = async function (
   `;
   await conn.execute(plsql);
 };
+
+describe('DB semconv migration', () => {
+  const connectionConfig = {
+    user: 'vector',
+    protocol: 'TCP',
+    hostName: 'localhost',
+    port: 1521,
+    dbName: 'ORCL',
+    instanceName: 'ORCL1',
+    pdbName: 'PDB1',
+    domainName: 'example.com',
+    serviceName: 'svc',
+    dbUniqueName: 'ORCL1_UNIQUE',
+  };
+
+  it('keeps old db.namespace semantics and db.user by default', () => {
+    const handler = createTestTraceHandler(SemconvStability.OLD);
+    const attributes = (handler as any)._getConnectionSpanAttributes(
+      connectionConfig
+    );
+
+    assert.strictEqual(attributes[ATTR_DB_USER], 'vector');
+    assert.strictEqual(attributes[ATTR_DB_NAMESPACE], 'ORCL1|PDB1|svc');
+    assert.strictEqual(attributes[ATTR_ORACLE_DB_NAME], undefined);
+    assert.strictEqual(attributes[ATTR_ORACLE_DB_PDB], undefined);
+    assert.strictEqual(attributes[ATTR_ORACLE_DB_DOMAIN], undefined);
+  });
+
+  it('emits new db.namespace semantics and removes db.user in stable mode', () => {
+    const handler = createTestTraceHandler(SemconvStability.STABLE);
+    const attributes = (handler as any)._getConnectionSpanAttributes(
+      connectionConfig
+    );
+
+    assert.strictEqual(attributes[ATTR_DB_USER], undefined);
+    assert.strictEqual(attributes[ATTR_DB_NAMESPACE], 'ORCL1_UNIQUE');
+    assert.strictEqual(attributes[ATTR_ORACLE_DB_NAME], 'ORCL');
+    assert.strictEqual(attributes[ATTR_ORACLE_DB_INSTANCE_NAME], 'ORCL1');
+    assert.strictEqual(attributes[ATTR_ORACLE_DB_PDB], 'PDB1');
+    assert.strictEqual(attributes[ATTR_ORACLE_DB_DOMAIN], 'example.com');
+    assert.strictEqual(attributes[ATTR_ORACLE_DB_SERVICE], 'svc');
+  });
+
+  it('keeps old db.namespace in dup mode while emitting new oracle.db attributes', () => {
+    const handler = createTestTraceHandler(
+      SemconvStability.OLD | SemconvStability.STABLE
+    );
+    const attributes = (handler as any)._getConnectionSpanAttributes(
+      connectionConfig
+    );
+
+    assert.strictEqual(attributes[ATTR_DB_USER], 'vector');
+    assert.strictEqual(attributes[ATTR_DB_NAMESPACE], 'ORCL1|PDB1|svc');
+    assert.strictEqual(attributes[ATTR_ORACLE_DB_NAME], 'ORCL');
+    assert.strictEqual(attributes[ATTR_ORACLE_DB_INSTANCE_NAME], 'ORCL1');
+    assert.strictEqual(attributes[ATTR_ORACLE_DB_PDB], 'PDB1');
+    assert.strictEqual(attributes[ATTR_ORACLE_DB_DOMAIN], 'example.com');
+    assert.strictEqual(attributes[ATTR_ORACLE_DB_SERVICE], 'svc');
+  });
+});
 
 describe('oracledb', () => {
   let connection: oracledb.Connection;
