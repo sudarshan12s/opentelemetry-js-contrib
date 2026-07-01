@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { safeExecuteInTheMiddle } from '@opentelemetry/instrumentation';
+import {
+  safeExecuteInTheMiddle,
+  SemconvStability,
+} from '@opentelemetry/instrumentation';
 import {
   Span,
   SpanStatusCode,
@@ -26,8 +29,13 @@ import {
   ATTR_NETWORK_TRANSPORT,
 } from '@opentelemetry/semantic-conventions';
 import {
-  ATTR_DB_USER,
   ATTR_DB_OPERATION_PARAMETER,
+  ATTR_DB_USER,
+  ATTR_ORACLE_DB_DOMAIN,
+  ATTR_ORACLE_DB_INSTANCE_NAME,
+  ATTR_ORACLE_DB_NAME,
+  ATTR_ORACLE_DB_PDB,
+  ATTR_ORACLE_DB_SERVICE,
   DB_SYSTEM_NAME_VALUE_ORACLE_DB,
 } from './semconv';
 
@@ -92,9 +100,19 @@ export function getOracleTelemetryTraceHandlerClass(
       );
     }
 
-    // It returns db.namespace as mentioned in semantic conventions
-    // Ex: ORCL1|PDB1|db_high.adb.oraclecloud.com
-    private _getDBNameSpace(
+    private _usesOldDbSemconv() {
+      return Boolean(
+        this._instrumentConfig.dbSemconvStability! & SemconvStability.OLD
+      );
+    }
+
+    private _usesStableDbSemconv() {
+      return Boolean(
+        this._instrumentConfig.dbSemconvStability! & SemconvStability.STABLE
+      );
+    }
+
+    private _getOldDbNamespace(
       instanceName?: string,
       pdbName?: string,
       serviceName?: string
@@ -105,21 +123,58 @@ export function getOracleTelemetryTraceHandlerClass(
       return `${instanceName ?? ''}|${pdbName ?? ''}|${serviceName ?? ''}`;
     }
 
+    private _hasValue(value: string | number | undefined) {
+      return value !== undefined && value !== '';
+    }
+
     // Returns the connection related Attributes for
     // semantic standards and module custom keys.
     private _getConnectionSpanAttributes(config: SpanConnectionConfig) {
-      return {
+      const attributes: Record<string, string | number | undefined> = {
         [ATTR_DB_SYSTEM_NAME]: DB_SYSTEM_NAME_VALUE_ORACLE_DB,
         [ATTR_NETWORK_TRANSPORT]: config.protocol,
-        [ATTR_DB_USER]: config.user,
-        [ATTR_DB_NAMESPACE]: this._getDBNameSpace(
-          config.instanceName,
-          config.pdbName,
-          config.serviceName
-        ),
         [ATTR_SERVER_ADDRESS]: config.hostName,
         [ATTR_SERVER_PORT]: config.port,
       };
+
+      if (this._usesOldDbSemconv()) {
+        if (this._hasValue(config.user)) {
+          attributes[ATTR_DB_USER] = config.user;
+        }
+        const oldDbNamespace = this._getOldDbNamespace(
+          config.instanceName,
+          config.pdbName,
+          config.serviceName
+        );
+        if (oldDbNamespace !== undefined) {
+          attributes[ATTR_DB_NAMESPACE] = oldDbNamespace;
+        }
+      }
+
+      if (this._usesStableDbSemconv()) {
+        // In database/dup mode, db.namespace keeps the old meaning because
+        // both meanings cannot coexist on the same span under one key.
+        if (!this._usesOldDbSemconv() && this._hasValue(config.dbUniqueName)) {
+          attributes[ATTR_DB_NAMESPACE] = config.dbUniqueName;
+        }
+        if (this._hasValue(config.dbName)) {
+          attributes[ATTR_ORACLE_DB_NAME] = config.dbName;
+        }
+        if (this._hasValue(config.domainName)) {
+          attributes[ATTR_ORACLE_DB_DOMAIN] = config.domainName;
+        }
+        if (this._hasValue(config.pdbName)) {
+          attributes[ATTR_ORACLE_DB_PDB] = config.pdbName;
+        }
+        if (this._hasValue(config.instanceName)) {
+          attributes[ATTR_ORACLE_DB_INSTANCE_NAME] = config.instanceName;
+        }
+        if (this._hasValue(config.serviceName)) {
+          attributes[ATTR_ORACLE_DB_SERVICE] = config.serviceName;
+        }
+      }
+
+      return attributes;
     }
 
     // It returns true if object is of type oracledb.Lob.
@@ -286,8 +341,13 @@ export function getOracleTelemetryTraceHandlerClass(
         return;
       }
 
-      const { instanceName, pdbName, serviceName } = connectLevelConfig;
-      const dbName = this._getDBNameSpace(instanceName, pdbName, serviceName);
+      const dbName = this._usesStableDbSemconv()
+        ? connectLevelConfig.dbUniqueName
+        : this._getOldDbNamespace(
+            connectLevelConfig.instanceName,
+            connectLevelConfig.pdbName,
+            connectLevelConfig.serviceName
+          );
       const sqlCommand =
         callLevelConfig?.statement?.split(' ')[0].toUpperCase() || '';
       userContext.span.updateName(
