@@ -61,8 +61,8 @@ const provider = new BasicTracerProvider({
   spanProcessors: [new SimpleSpanProcessor(memoryExporter)],
 });
 const tracer = provider.getTracer('external');
-// Prime the module patch path in stable mode for integration tests using the
-// public env-based semconv selection path, then restore the process env.
+
+// We create instrumentation with stability as 'database' and restore the env.
 const oldDbSemconvOptIn = process.env.OTEL_SEMCONV_STABILITY_OPT_IN;
 process.env.OTEL_SEMCONV_STABILITY_OPT_IN = 'database';
 const instrumentation = new OracleInstrumentation();
@@ -95,6 +95,11 @@ const VER_23_4 = 2304000000;
 const hostname = 'localhost';
 const pno = 1521;
 const serviceName = 'FREEPDB1';
+
+function isOracleDBPre7(): boolean {
+  return oracledb.version <= 61000;
+}
+
 let serverVersion = 2304000000; // DB version.
 let numExecSpans = 2; // Default number of Spans created for Execute API in thin mode.
 let numConnSpans = 2; // Default number of spans created during connection establishment.
@@ -196,7 +201,6 @@ if (process.env.NODE_ORACLEDB_DRIVER_MODE === 'thick') {
 function updateAttrSpanList(connection: oracledb.Connection) {
   serverVersion = connection.oracleServerVersion;
   const extendedConnection = connection as any;
-  const usesLegacyStableMetadataShape = oracledb.version <= 61000;
   const resolvedConnectMetadataAvailableDuringHandshake =
     oracledb.version < 61000;
   const connectSpanAttributes: Record<string, string | number> = {};
@@ -218,7 +222,7 @@ function updateAttrSpanList(connection: oracledb.Connection) {
   }
   if (extendedConnection.pdbName) {
     connectSpanAttributes[ATTR_ORACLE_DB_PDB] = extendedConnection.pdbName;
-  } else if (usesLegacyStableMetadataShape && connection.dbName) {
+  } else if (isOracleDBPre7() && connection.dbName) {
     connectSpanAttributes[ATTR_ORACLE_DB_PDB] = connection.dbName;
   }
   if (connection.serviceName) {
@@ -226,7 +230,7 @@ function updateAttrSpanList(connection: oracledb.Connection) {
   }
   if (
     resolvedConnectMetadataAvailableDuringHandshake &&
-    !usesLegacyStableMetadataShape &&
+    !isOracleDBPre7() &&
     connection.dbName
   ) {
     connectSpanAttributes[ATTR_ORACLE_DB_NAME] = connection.dbName;
@@ -555,7 +559,6 @@ describe('oracledb', () => {
 
   async function doSetup() {
     const extendedConn: any = connection;
-    const usesLegacyStableMetadataShape = oracledb.version <= 61000;
 
     if (oracledb.thin) {
       connAttributes = { ...DEFAULT_ATTRIBUTES };
@@ -571,12 +574,12 @@ describe('oracledb', () => {
     if (oracledb.thin && extendedConn.protocol) {
       connAttributes[ATTR_NETWORK_TRANSPORT] = extendedConn.protocol;
     }
-    if (connection.dbName && !usesLegacyStableMetadataShape) {
+    if (connection.dbName && !isOracleDBPre7()) {
       connAttributes[ATTR_ORACLE_DB_NAME] = oracledb.thin
         ? connection.dbName.toUpperCase()
         : connection.dbName;
     }
-    if (extendedConn.domainName && !usesLegacyStableMetadataShape) {
+    if (extendedConn.domainName && !isOracleDBPre7()) {
       connAttributes[ATTR_ORACLE_DB_DOMAIN] = extendedConn.domainName;
     }
     if (connection.instanceName) {
@@ -584,7 +587,7 @@ describe('oracledb', () => {
     }
     if (extendedConn.pdbName) {
       connAttributes[ATTR_ORACLE_DB_PDB] = extendedConn.pdbName;
-    } else if (connection.dbName && usesLegacyStableMetadataShape) {
+    } else if (connection.dbName && isOracleDBPre7()) {
       connAttributes[ATTR_ORACLE_DB_PDB] = oracledb.thin
         ? connection.dbName.toUpperCase()
         : connection.dbName;
@@ -592,7 +595,7 @@ describe('oracledb', () => {
     if (connection.serviceName) {
       connAttributes[ATTR_ORACLE_DB_SERVICE] = connection.serviceName;
     }
-    if (extendedConn.dbUniqueName && !usesLegacyStableMetadataShape) {
+    if (extendedConn.dbUniqueName && !isOracleDBPre7()) {
       connAttributes[ATTR_DB_NAMESPACE] = extendedConn.dbUniqueName;
     }
     poolAttributes = { ...connAttributes, ...POOL_ATTRIBUTES };
@@ -1465,8 +1468,7 @@ describe('oracledb', () => {
 
     it('should intercept connection.executeMany(sql, binds)', async () => {
       const span = tracer.startSpan('test span');
-      const usesLegacyStableMetadataShape = oracledb.version <= 61000;
-      const executeManyRoundTripCommand = usesLegacyStableMetadataShape
+      const executeManyRoundTripCommand = isOracleDBPre7()
         ? ''
         : 'INSERT';
       const executeManyPublicCommand = 'INSERT';
@@ -1479,7 +1481,7 @@ describe('oracledb', () => {
       ];
       const sqlInsert = `INSERT INTO ${tableName} VALUES (:a, :b, 'clob')`;
       const executeManyAttributes = { ...connAttributes };
-      if (!usesLegacyStableMetadataShape) {
+      if (!isOracleDBPre7()) {
         executeManyAttributes[ATTR_DB_OPERATION_NAME] = 'INSERT';
       }
 
@@ -1513,8 +1515,7 @@ describe('oracledb', () => {
 
     it('should intercept connection.executeMany(sql, binds) with out parent span', async () => {
       instrumentation.enable();
-      const usesLegacyStableMetadataShape = oracledb.version <= 61000;
-      const executeManyRoundTripCommand = usesLegacyStableMetadataShape
+      const executeManyRoundTripCommand = isOracleDBPre7()
         ? ''
         : 'INSERT';
       const executeManyPublicCommand = 'INSERT';
@@ -1527,7 +1528,7 @@ describe('oracledb', () => {
       ];
       const sqlInsert = `INSERT INTO ${tableName} VALUES (:a, :b, 'clob')`;
       const executeManyAttributes = { ...connAttributes };
-      if (!usesLegacyStableMetadataShape) {
+      if (!isOracleDBPre7()) {
         executeManyAttributes[ATTR_DB_OPERATION_NAME] = 'INSERT';
       }
       const res = await connection.executeMany<Array<string>>(sqlInsert, binds);

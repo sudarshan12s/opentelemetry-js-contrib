@@ -50,9 +50,8 @@ export interface OracleInstrumentationConfig extends InstrumentationConfig {
   /**
    * Internal-only override for DB semconv migration mode.
    *
-   * Production users should control semconv selection with
-   * OTEL_SEMCONV_STABILITY_OPT_IN. This field exists for
-   * instrumentation internals and tests.
+   * users should control semconv selection with
+   * OTEL_SEMCONV_STABILITY_OPT_IN env.
    *
    * @internal
    */
