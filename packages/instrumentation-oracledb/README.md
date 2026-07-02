@@ -73,7 +73,7 @@ execution, and LOB operations.
 | `oracledb.Connection.createLob` | Temporary LOB creation | When `connection.createLob()` is called |
 | `oracledb.Lob.getData` | LOB data read | When `lob.getData()` is called |
 
-For Thin mode, additional internal round-trip spans may be emitted, such as:
+For Thin mode, additional internal round-trip spans will be emitted, such as:
 
 - `oracledb.FastAuthMessage`
 - `oracledb.AuthMessage`
@@ -140,9 +140,9 @@ currently Release Candidate in the semantic conventions.
 | Old semconv | Stable semconv | Short Description |
 | ----------- | -------------- | ----------------- |
 | `db.user` | Removed | Database user name |
-| `db.statement` | `db.query.text` | SQL text |
-| `db.system` | `db.system.name` | Database product identifier |
-| `db.namespace=<instance|pdb|service>` | `db.namespace=<dbUniqueName>` | Oracle database namespace |
+| (not included) | `db.query.text` | SQL text |
+| (not included) | `db.system.name` | Database product identifier |
+| ``db.namespace="<instance>|<pdb>|<service>"`` | ``db.namespace="<dbUniqueName>"`` | Oracle database identifier. Old semconv used a concatenated `instance|pdb|service` value; stable semconv uses `DB_UNIQUE_NAME`. |
 | (not included) | `oracle.db.name` | Database name |
 | (not included) | `oracle.db.instance.name` | Oracle instance name |
 | (not included) | `oracle.db.pdb` | Pluggable database name |
