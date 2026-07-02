@@ -100,6 +100,22 @@ function isOracleDB610(): boolean {
   return oracledb.version === 61000;
 }
 
+function hasSeparateDbName(): boolean {
+  return oracledb.version >= 70000;
+}
+
+function hasPdbName(): boolean {
+  return oracledb.version >= 70000;
+}
+
+function hasDbUniqueName(): boolean {
+  return oracledb.version >= 70000;
+}
+
+function hasExecuteManySqlOperation(): boolean {
+  return oracledb.version >= 70000;
+}
+
 let serverVersion = 2304000000; // DB version.
 let numExecSpans = 2; // Default number of Spans created for Execute API in thin mode.
 let numConnSpans = 2; // Default number of spans created during connection establishment.
@@ -218,7 +234,7 @@ function updateAttrSpanList(connection: oracledb.Connection) {
     connectSpanAttributes[ATTR_ORACLE_DB_INSTANCE_NAME] =
       connection.instanceName;
   }
-  if (extendedConnection.pdbName) {
+  if (hasPdbName() && extendedConnection.pdbName) {
     connectSpanAttributes[ATTR_ORACLE_DB_PDB] = extendedConnection.pdbName;
   } else if (isOracleDB610() && connection.dbName) {
     connectSpanAttributes[ATTR_ORACLE_DB_PDB] = connection.dbName;
@@ -226,13 +242,13 @@ function updateAttrSpanList(connection: oracledb.Connection) {
   if (connection.serviceName) {
     connectSpanAttributes[ATTR_ORACLE_DB_SERVICE] = connection.serviceName;
   }
-  if (!isOracleDB610() && connection.dbName) {
+  if (hasSeparateDbName() && connection.dbName) {
     connectSpanAttributes[ATTR_ORACLE_DB_NAME] = connection.dbName;
   }
-  if (!isOracleDB610() && extendedConnection.domainName) {
+  if (extendedConnection.domainName) {
     connectSpanAttributes[ATTR_ORACLE_DB_DOMAIN] = extendedConnection.domainName;
   }
-  if (!isOracleDB610() && extendedConnection.dbUniqueName) {
+  if (hasDbUniqueName() && extendedConnection.dbUniqueName) {
     connectSpanAttributes[ATTR_DB_NAMESPACE] = `${extendedConnection.dbUniqueName}`;
   }
 
@@ -552,18 +568,18 @@ describe('oracledb', () => {
     if (oracledb.thin && extendedConn.protocol) {
       connAttributes[ATTR_NETWORK_TRANSPORT] = extendedConn.protocol;
     }
-    if (connection.dbName && !isOracleDB610()) {
+    if (connection.dbName && hasSeparateDbName()) {
       connAttributes[ATTR_ORACLE_DB_NAME] = oracledb.thin
         ? connection.dbName.toUpperCase()
         : connection.dbName;
     }
-    if (extendedConn.domainName && !isOracleDB610()) {
+    if (extendedConn.domainName) {
       connAttributes[ATTR_ORACLE_DB_DOMAIN] = extendedConn.domainName;
     }
     if (connection.instanceName) {
       connAttributes[ATTR_ORACLE_DB_INSTANCE_NAME] = connection.instanceName;
     }
-    if (extendedConn.pdbName) {
+    if (hasPdbName() && extendedConn.pdbName) {
       connAttributes[ATTR_ORACLE_DB_PDB] = extendedConn.pdbName;
     } else if (connection.dbName && isOracleDB610()) {
       connAttributes[ATTR_ORACLE_DB_PDB] = oracledb.thin
@@ -573,7 +589,7 @@ describe('oracledb', () => {
     if (connection.serviceName) {
       connAttributes[ATTR_ORACLE_DB_SERVICE] = connection.serviceName;
     }
-    if (extendedConn.dbUniqueName && !isOracleDB610()) {
+    if (hasDbUniqueName() && extendedConn.dbUniqueName) {
       connAttributes[ATTR_DB_NAMESPACE] = extendedConn.dbUniqueName;
     }
     poolAttributes = { ...connAttributes, ...POOL_ATTRIBUTES };
@@ -1446,9 +1462,9 @@ describe('oracledb', () => {
 
     it('should intercept connection.executeMany(sql, binds)', async () => {
       const span = tracer.startSpan('test span');
-      const executeManyRoundTripCommand = isOracleDB610()
-        ? ''
-        : 'INSERT';
+      const executeManyRoundTripCommand = hasExecuteManySqlOperation()
+        ? 'INSERT'
+        : '';
       const executeManyPublicCommand = 'INSERT';
       const binds = [
         { a: 1, b: 'Test 1 (One)' },
@@ -1459,7 +1475,7 @@ describe('oracledb', () => {
       ];
       const sqlInsert = `INSERT INTO ${tableName} VALUES (:a, :b, 'clob')`;
       const executeManyAttributes = { ...connAttributes };
-      if (!isOracleDB610()) {
+      if (hasExecuteManySqlOperation()) {
         executeManyAttributes[ATTR_DB_OPERATION_NAME] = 'INSERT';
       }
 
@@ -1493,9 +1509,9 @@ describe('oracledb', () => {
 
     it('should intercept connection.executeMany(sql, binds) with out parent span', async () => {
       instrumentation.enable();
-      const executeManyRoundTripCommand = isOracleDB610()
-        ? ''
-        : 'INSERT';
+      const executeManyRoundTripCommand = hasExecuteManySqlOperation()
+        ? 'INSERT'
+        : '';
       const executeManyPublicCommand = 'INSERT';
       const binds = [
         { a: 1, b: 'Test 1 (One)' },
@@ -1506,7 +1522,7 @@ describe('oracledb', () => {
       ];
       const sqlInsert = `INSERT INTO ${tableName} VALUES (:a, :b, 'clob')`;
       const executeManyAttributes = { ...connAttributes };
-      if (!isOracleDB610()) {
+      if (hasExecuteManySqlOperation()) {
         executeManyAttributes[ATTR_DB_OPERATION_NAME] = 'INSERT';
       }
       const res = await connection.executeMany<Array<string>>(sqlInsert, binds);
