@@ -142,7 +142,7 @@ currently Release Candidate in the semantic conventions.
 | `db.user` | Removed | Database user name |
 | (not included) | `db.query.text` | SQL text |
 | (not included) | `db.system.name` | Database product identifier |
-| ``db.namespace="<instance>|<pdb>|<service>"`` | ``db.namespace="<dbUniqueName>"`` | Oracle database identifier. Old semconv used a concatenated `instance|pdb|service` value; stable semconv uses `DB_UNIQUE_NAME`. |
+| `db.namespace="<instance>\|<pdb>\|<service>"` | `db.namespace="<dbUniqueName>"` | Oracle database identifier. Old semconv used a concatenated `instance|pdb|service` value; stable semconv uses `DB_UNIQUE_NAME`. |
 | (not included) | `oracle.db.name` | Database name |
 | (not included) | `oracle.db.instance.name` | Oracle instance name |
 | (not included) | `oracle.db.pdb` | Pluggable database name |
