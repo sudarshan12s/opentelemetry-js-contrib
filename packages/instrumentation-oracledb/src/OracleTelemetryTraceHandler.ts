@@ -356,12 +356,9 @@ export function getOracleTelemetryTraceHandlerClass(
             connectLevelConfig.pdbName,
             connectLevelConfig.serviceName
           );
-      // Prefer the SQL text for the verb, then fall back to the operation
-      // field when the trace payload omits the statement.
-      const sqlCommand =
-        sqlStatement?.split(' ')[0].toUpperCase() ||
-        callLevelConfig?.operation ||
-        '';
+      // Prefer the SQL text for the verb. When the trace payload omits the
+      // statement, the fallback above uses the original SQL argument.
+      const sqlCommand = sqlStatement?.split(' ')[0].toUpperCase() || '';
       userContext.span.updateName(
         `${operation}:${sqlCommand}${dbName ? ` ${dbName}` : ''}`
       );
