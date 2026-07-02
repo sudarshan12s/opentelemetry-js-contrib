@@ -48,8 +48,11 @@ export interface OracleInstrumentationExecutionResponseHook {
 
 export interface OracleInstrumentationConfig extends InstrumentationConfig {
   /**
-   * Internal DB semconv migration mode derived from
-   * OTEL_SEMCONV_STABILITY_OPT_IN.
+   * Internal-only override for DB semconv migration mode.
+   *
+   * Production users should control semconv selection with
+   * OTEL_SEMCONV_STABILITY_OPT_IN. This field exists for
+   * instrumentation internals and tests.
    *
    * @internal
    */

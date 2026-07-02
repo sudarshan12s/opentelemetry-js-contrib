@@ -341,6 +341,14 @@ export function getOracleTelemetryTraceHandlerClass(
         return;
       }
 
+      // Some older node-oracledb versions do not populate
+      // callLevelConfig.statement for executeMany round trips,
+      // so fall back to the original SQL argument.
+      const sqlStatement =
+        callLevelConfig?.statement ??
+        (typeof traceContext.args?.[0] === 'string'
+          ? traceContext.args[0]
+          : undefined);
       const dbName = this._usesStableDbSemconv()
         ? connectLevelConfig.dbUniqueName
         : this._getOldDbNamespace(
@@ -348,10 +356,14 @@ export function getOracleTelemetryTraceHandlerClass(
             connectLevelConfig.pdbName,
             connectLevelConfig.serviceName
           );
+      // Prefer the SQL text for the verb, then fall back to the operation
+      // field when the trace payload omits the statement.
       const sqlCommand =
-        callLevelConfig?.statement?.split(' ')[0].toUpperCase() || '';
+        sqlStatement?.split(' ')[0].toUpperCase() ||
+        callLevelConfig?.operation ||
+        '';
       userContext.span.updateName(
-        `${operation}:${sqlCommand}${dbName && ` ${dbName}`}`
+        `${operation}:${sqlCommand}${dbName ? ` ${dbName}` : ''}`
       );
     }
 
