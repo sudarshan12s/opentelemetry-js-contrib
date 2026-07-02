@@ -123,10 +123,6 @@ export function getOracleTelemetryTraceHandlerClass(
       return `${instanceName ?? ''}|${pdbName ?? ''}|${serviceName ?? ''}`;
     }
 
-    private _hasValue(value: string | number | undefined) {
-      return value !== undefined && value !== '';
-    }
-
     // Returns the connection related Attributes for
     // semantic standards and module custom keys.
     private _getConnectionSpanAttributes(config: SpanConnectionConfig) {
@@ -138,7 +134,7 @@ export function getOracleTelemetryTraceHandlerClass(
       };
 
       if (this._usesOldDbSemconv()) {
-        if (this._hasValue(config.user)) {
+        if (config.user) {
           attributes[ATTR_DB_USER] = config.user;
         }
         const oldDbNamespace = this._getOldDbNamespace(
@@ -154,22 +150,22 @@ export function getOracleTelemetryTraceHandlerClass(
       if (this._usesStableDbSemconv()) {
         // In database/dup mode, db.namespace keeps the old meaning because
         // both meanings cannot coexist on the same span under one key.
-        if (!this._usesOldDbSemconv() && this._hasValue(config.dbUniqueName)) {
+        if (!this._usesOldDbSemconv() && config.dbUniqueName) {
           attributes[ATTR_DB_NAMESPACE] = config.dbUniqueName;
         }
-        if (this._hasValue(config.dbName)) {
+        if (config.dbName) {
           attributes[ATTR_ORACLE_DB_NAME] = config.dbName;
         }
-        if (this._hasValue(config.domainName)) {
+        if (config.domainName) {
           attributes[ATTR_ORACLE_DB_DOMAIN] = config.domainName;
         }
-        if (this._hasValue(config.pdbName)) {
+        if (config.pdbName) {
           attributes[ATTR_ORACLE_DB_PDB] = config.pdbName;
         }
-        if (this._hasValue(config.instanceName)) {
+        if (config.instanceName) {
           attributes[ATTR_ORACLE_DB_INSTANCE_NAME] = config.instanceName;
         }
-        if (this._hasValue(config.serviceName)) {
+        if (config.serviceName) {
           attributes[ATTR_ORACLE_DB_SERVICE] = config.serviceName;
         }
       }
