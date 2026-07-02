@@ -137,17 +137,32 @@ currently Release Candidate in the semantic conventions.
 
 ### Attributes collected
 
-| Old semconv | Stable semconv | Short Description |
-| ----------- | -------------- | ----------------- |
+Attributes affected by `OTEL_SEMCONV_STABILITY_OPT_IN=database`:
+
+| Default / old mode | Stable mode | Short Description |
+| ------------------ | ----------- | ----------------- |
 | `db.user` | Removed | Database user name |
-| (not included) | `db.query.text` | SQL text |
-| (not included) | `db.system.name` | Database product identifier |
-| `db.namespace="<instance>\|<pdb>\|<service>"` | `db.namespace="<dbUniqueName>"` | Oracle database identifier. Old semconv used a concatenated `instance|pdb|service` value; stable semconv uses `DB_UNIQUE_NAME`. |
-| (not included) | `oracle.db.name` | Database name |
-| (not included) | `oracle.db.instance.name` | Oracle instance name |
-| (not included) | `oracle.db.pdb` | Pluggable database name |
-| (not included) | `oracle.db.domain` | Database domain |
-| (not included) | `oracle.db.service` | Effective Oracle service name |
+| `db.namespace="<instance>\|<pdb>\|<service>"` | `db.namespace="<dbUniqueName>"` | Oracle database identifier. Default / old mode uses a concatenated `instance|pdb|service` value; stable mode uses `DB_UNIQUE_NAME`. |
+
+Attributes emitted independently of the `database` opt-in:
+
+| Attribute | Short Description |
+| --------- | ----------------- |
+| `db.system.name` | Database product identifier |
+| `network.transport` | Network transport |
+| `server.address` | Remote database host |
+| `server.port` | Remote database port |
+| `db.query.text` | SQL text when `dbStatementDump` or `enhancedDatabaseReporting` is enabled |
+
+Oracle-specific attributes emitted with `database` / `database/dup` when available:
+
+| Attribute | Short Description |
+| --------- | ----------------- |
+| `oracle.db.name` | Database name |
+| `oracle.db.instance.name` | Oracle instance name |
+| `oracle.db.pdb` | Pluggable database name |
+| `oracle.db.domain` | Database domain |
+| `oracle.db.service` | Effective Oracle service name |
 
 ### `db.namespace` migration note
 

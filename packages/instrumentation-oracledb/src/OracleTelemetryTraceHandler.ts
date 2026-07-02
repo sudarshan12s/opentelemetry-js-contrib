@@ -126,6 +126,9 @@ export function getOracleTelemetryTraceHandlerClass(
     // Returns the connection related Attributes for
     // semantic standards and module custom keys.
     private _getConnectionSpanAttributes(config: SpanConnectionConfig) {
+      // These attributes are emitted independently of the db semconv opt-in.
+      // The db semconv migration in this instrumentation is centered on
+      // db.user removal, db.namespace meaning, and Oracle-specific split attrs.
       const attributes: Record<string, string | number | undefined> = {
         [ATTR_DB_SYSTEM_NAME]: DB_SYSTEM_NAME_VALUE_ORACLE_DB,
         [ATTR_NETWORK_TRANSPORT]: config.protocol,
