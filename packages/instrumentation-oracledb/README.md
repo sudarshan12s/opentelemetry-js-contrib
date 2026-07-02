@@ -30,6 +30,10 @@ npm install --save @opentelemetry/instrumentation-oracledb
 - [`oracledb`](https://www.npmjs.com/package/oracledb) versions `>=6.7.0 <8`
 
 ## Usage
+OpenTelemetry OracleInstrumentation allows the user to automatically collect trace data and export them to the backend of choice, to give observability to distributed systems when working with [oracledb](https://www.npmjs.com/package/oracledb). This module works with both Thin and Thick modes of the oracledb
+package, although there may be some caveats with Thick Mode now, which are listed in a later paragraph.
+
+To load a specific plugin (**OracleInstrumentation** in this case), specify it in the configuration of the registerInstrumentations object.
 
 ```js
 const { NodeTracerProvider } = require('@opentelemetry/sdk-trace-node');
@@ -45,6 +49,11 @@ registerInstrumentations({
   ],
 });
 ```
+
+Caveats with  ``oracledb`` Thick mode:
+
+- RoundTrip Spans will not appear for Thick Mode
+- Hostname will not be available in Thick Mode
 
 This instrumentation supports both Thin and Thick mode in `oracledb`.
 
@@ -89,7 +98,7 @@ For Thin mode, additional internal round-trip spans may be emitted, such as:
 
 - Thin mode emits internal round-trip spans. Thick mode does not.
 - Thick mode does not expose the same low-level network metadata, so attributes
-  such as `server.address`, `server.port`, and `network.transport` may be
+  such as `server.address`, `server.port`, and `network.transport` are
   missing.
 - Oracle connection metadata such as `oracle.db.name`,
   `oracle.db.instance.name`, `oracle.db.pdb`, `oracle.db.domain`, and the final
@@ -119,6 +128,13 @@ To select which semconv version(s) are emitted from this instrumentation, use:
 - `database/dup`: emit both old and stable Database semantic conventions where possible
 - By default, if `OTEL_SEMCONV_STABILITY_OPT_IN` includes neither token, the old semconv is used
 
+`OTEL_SEMCONV_STABILITY_OPT_IN=database` enables the stable database migration
+behavior for core DB attributes. When available, this instrumentation also
+emits Oracle-specific `oracle.db.*` attributes such as
+`oracle.db.domain`, `oracle.db.instance.name`, `oracle.db.name`,
+`oracle.db.pdb`, and `oracle.db.service`; these Oracle-specific attributes are
+currently Release Candidate in the semantic conventions.
+
 ### Attributes collected
 
 | Old semconv | Stable semconv | Short Description |
@@ -126,8 +142,6 @@ To select which semconv version(s) are emitted from this instrumentation, use:
 | `db.user` | Removed | Database user name |
 | `db.statement` | `db.query.text` | SQL text |
 | `db.system` | `db.system.name` | Database product identifier |
-| `net.peer.name` | `server.address` | Remote database host |
-| `net.peer.port` | `server.port` | Remote database port |
 | `db.namespace=<instance|pdb|service>` | `db.namespace=<dbUniqueName>` | Oracle database namespace |
 | (not included) | `oracle.db.name` | Database name |
 | (not included) | `oracle.db.instance.name` | Oracle instance name |

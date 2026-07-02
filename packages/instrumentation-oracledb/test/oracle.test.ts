@@ -494,6 +494,9 @@ describe('DB semconv migration', () => {
 
     assert.strictEqual(attributes[ATTR_DB_USER], 'vector');
     assert.strictEqual(attributes[ATTR_DB_NAMESPACE], 'ORCL1|PDB1|svc');
+    assert.strictEqual(attributes[ATTR_NETWORK_TRANSPORT], 'TCP');
+    assert.strictEqual(attributes[ATTR_SERVER_ADDRESS], 'localhost');
+    assert.strictEqual(attributes[ATTR_SERVER_PORT], 1521);
     assert.strictEqual(attributes[ATTR_ORACLE_DB_NAME], undefined);
     assert.strictEqual(attributes[ATTR_ORACLE_DB_PDB], undefined);
     assert.strictEqual(attributes[ATTR_ORACLE_DB_DOMAIN], undefined);
@@ -509,6 +512,9 @@ describe('DB semconv migration', () => {
 
     assert.strictEqual(attributes[ATTR_DB_USER], undefined);
     assert.strictEqual(attributes[ATTR_DB_NAMESPACE], 'ORCL1_UNIQUE');
+    assert.strictEqual(attributes[ATTR_NETWORK_TRANSPORT], 'TCP');
+    assert.strictEqual(attributes[ATTR_SERVER_ADDRESS], 'localhost');
+    assert.strictEqual(attributes[ATTR_SERVER_PORT], 1521);
     assert.strictEqual(attributes[ATTR_ORACLE_DB_NAME], 'ORCL');
     assert.strictEqual(attributes[ATTR_ORACLE_DB_INSTANCE_NAME], 'ORCL1');
     assert.strictEqual(attributes[ATTR_ORACLE_DB_PDB], 'PDB1');
@@ -526,6 +532,9 @@ describe('DB semconv migration', () => {
 
     assert.strictEqual(attributes[ATTR_DB_USER], 'vector');
     assert.strictEqual(attributes[ATTR_DB_NAMESPACE], 'ORCL1|PDB1|svc');
+    assert.strictEqual(attributes[ATTR_NETWORK_TRANSPORT], 'TCP');
+    assert.strictEqual(attributes[ATTR_SERVER_ADDRESS], 'localhost');
+    assert.strictEqual(attributes[ATTR_SERVER_PORT], 1521);
     assert.strictEqual(attributes[ATTR_ORACLE_DB_NAME], 'ORCL');
     assert.strictEqual(attributes[ATTR_ORACLE_DB_INSTANCE_NAME], 'ORCL1');
     assert.strictEqual(attributes[ATTR_ORACLE_DB_PDB], 'PDB1');
