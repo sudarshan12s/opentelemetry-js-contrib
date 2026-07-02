@@ -55,17 +55,13 @@ import {
   DB_SYSTEM_NAME_VALUE_ORACLE_DB,
 } from '../src/semconv';
 
-process.env.OTEL_SEMCONV_STABILITY_OPT_IN = 'database';
-
 const memoryExporter = new InMemorySpanExporter();
 let contextManager: AsyncLocalStorageContextManager;
 const provider = new BasicTracerProvider({
   spanProcessors: [new SimpleSpanProcessor(memoryExporter)],
 });
 const tracer = provider.getTracer('external');
-const instrumentation = new OracleInstrumentation();
-instrumentation.enable();
-instrumentation.disable();
+let instrumentation: OracleInstrumentation;
 
 import * as oracledb from 'oracledb';
 
@@ -91,8 +87,8 @@ let numExecSpans = 2; // Default number of Spans created for Execute API in thin
 let numConnSpans = 2; // Default number of spans created during connection establishment.
 let poolMinSpanCount = 1; // number of spans created for createPool considering poolMin.
 const CONFIG = {
-  user: process.env.ORACLE_USER || 'vector',
-  password: process.env.ORACLE_PASSWORD || 'vector',
+  user: process.env.ORACLE_USER || 'demo',
+  password: process.env.ORACLE_PASSWORD || 'demo',
   connectString: process.env.ORACLE_CONNECTSTRING || 'localhost:1521/freepdb1',
 };
 const POOL_CONFIG = {
@@ -439,6 +435,21 @@ const sqlCreateTable = async function (
 };
 
 describe('DB semconv migration', () => {
+  let oldEnv: string | undefined;
+
+  before(() => {
+    oldEnv = process.env.OTEL_SEMCONV_STABILITY_OPT_IN;
+    process.env.OTEL_SEMCONV_STABILITY_OPT_IN = 'database';
+  });
+
+  after(() => {
+    if (oldEnv === undefined) {
+      delete process.env.OTEL_SEMCONV_STABILITY_OPT_IN;
+    } else {
+      process.env.OTEL_SEMCONV_STABILITY_OPT_IN = oldEnv;
+    }
+  });
+
   const connectionConfig = {
     user: 'vector',
     protocol: 'TCP',
@@ -500,6 +511,7 @@ describe('DB semconv migration', () => {
 
 describe('oracledb', () => {
   let connection: oracledb.Connection;
+  const originalDbSemconvOptIn = process.env.OTEL_SEMCONV_STABILITY_OPT_IN;
 
   const testOracleDB = process.env.RUN_ORACLEDB_TESTS; // For CI: assumes local oracledb is already available
   const shouldTest = testOracleDB; // Skips these tests if false (default)
@@ -596,6 +608,8 @@ describe('oracledb', () => {
       skip();
     }
 
+    process.env.OTEL_SEMCONV_STABILITY_OPT_IN = 'database';
+    instrumentation = new OracleInstrumentation();
     connection = await oracledb.getConnection(CONFIG);
     await doSetup();
     updateAttrSpanList(connection);
@@ -611,6 +625,7 @@ describe('oracledb', () => {
       await connection.close();
     }
     instrumentation.disable();
+    process.env.OTEL_SEMCONV_STABILITY_OPT_IN = originalDbSemconvOptIn;
   });
 
   beforeEach(() => {

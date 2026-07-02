@@ -100,16 +100,16 @@ export function getOracleTelemetryTraceHandlerClass(
       );
     }
 
+    private get _stability(): SemconvStability {
+      return this._instrumentConfig.dbSemconvStability ?? SemconvStability.OLD;
+    }
+
     private _usesOldDbSemconv() {
-      return Boolean(
-        this._instrumentConfig.dbSemconvStability! & SemconvStability.OLD
-      );
+      return Boolean(this._stability & SemconvStability.OLD);
     }
 
     private _usesStableDbSemconv() {
-      return Boolean(
-        this._instrumentConfig.dbSemconvStability! & SemconvStability.STABLE
-      );
+      return Boolean(this._stability & SemconvStability.STABLE);
     }
 
     private _getOldDbNamespace(
@@ -146,7 +146,7 @@ export function getOracleTelemetryTraceHandlerClass(
           config.pdbName,
           config.serviceName
         );
-        if (oldDbNamespace !== undefined) {
+        if (oldDbNamespace && oldDbNamespace !== '||') {
           attributes[ATTR_DB_NAMESPACE] = oldDbNamespace;
         }
       }
