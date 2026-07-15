@@ -28,16 +28,25 @@ export const ATTR_DB_OPERATION_PARAMETER = (key: string) =>
   `db.operation.parameter.${key}`;
 
 /**
+ * The database domain associated with the connection.
+ */
+export const ATTR_ORACLE_DB_DOMAIN = 'oracle.db.domain' as const;
+
+/**
  * The instance name associated with the connection in an Oracle Real
  * Application Clusters environment.
  */
-export const ATTR_ORACLE_DB_INSTANCE_NAME =
-  'oracle.db.instance.name' as const;
+export const ATTR_ORACLE_DB_INSTANCE_NAME = 'oracle.db.instance.name' as const;
 
 /**
  * The database name associated with the connection.
  */
 export const ATTR_ORACLE_DB_NAME = 'oracle.db.name' as const;
+
+/**
+ * The pluggable database (PDB) name associated with the connection.
+ */
+export const ATTR_ORACLE_DB_PDB = 'oracle.db.pdb' as const;
 
 /**
  * The service name currently associated with the database connection.
