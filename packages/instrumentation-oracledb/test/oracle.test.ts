@@ -735,6 +735,8 @@ describe('oracledb', () => {
         }
       }
     }
+    supportsAppContext =
+      typeof (connection as any)?.appContext === 'function';
     await doSetup();
     updateAttrSpanList(connection);
     contextManager = new AsyncLocalStorageContextManager().enable();
