@@ -94,6 +94,7 @@ For Thin mode, additional internal round-trip spans will be emitted, such as:
 | `responseHook` | `OracleInstrumentationExecutionResponseHook` | `undefined` | Hook for adding custom span attributes based on the database response. |
 | `requireParentSpan` | `boolean` | `false` | If true, only creates spans when there is an active parent span. |
 | `propagateTraceContextToSessionAction` | `boolean` | `false` | If true, injects W3C Trace Context into the Oracle `V$SESSION.ACTION` field so database-side tracing can be correlated with application spans. |
+| `enableTraceContextPropagation` | `boolean` | `false` | If true, injects the W3C Trace Context into the Oracle `CLIENTCONTEXT` namespace. In Thin mode, the same value is also propagated across internal round trips. Requires a node-oracledb version that exposes `connection.appContext`; otherwise the instrumentation logs a warning and skips this propagation. |
 
 ## OracleDB-specific Notes
 
