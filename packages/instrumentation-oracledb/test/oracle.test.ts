@@ -16,6 +16,7 @@ import {
 } from '@opentelemetry/api';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
 import * as testUtils from '@opentelemetry/contrib-test-utils';
+import { ZipkinExporter } from '@opentelemetry/exporter-zipkin';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import {
@@ -62,6 +63,7 @@ const memoryExporter = new InMemorySpanExporter();
 const collectorEndpoint =
   process.env.ORACLE_TEST_OTLP_TRACES_ENDPOINT ||
   process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+const zipkinEndpoint = process.env.ORACLE_TEST_ZIPKIN_TRACES_ENDPOINT;
 const testServiceName =
   process.env.ORACLE_TEST_SERVICE_NAME ||
   process.env.OTEL_SERVICE_NAME ||
@@ -87,6 +89,12 @@ function getSpanProcessors(): SpanProcessor[] {
           url: getCollectorTracesEndpoint(collectorEndpoint),
         })
       )
+    );
+  }
+
+  if (zipkinEndpoint) {
+    processors.push(
+      new SimpleSpanProcessor(new ZipkinExporter({ url: zipkinEndpoint }))
     );
   }
 
@@ -597,7 +605,9 @@ describe('oracledb', () => {
   const buildExpectedClientContextPayload = (spanContext: SpanContext) => {
     const traceparent = buildTraceparent(spanContext);
     const tracestate = spanContext.traceState?.serialize() ?? '';
-    return `traceparent: ${traceparent}\r\ntracestate: ${tracestate}\r\n`;
+    return `traceparent: ${traceparent}\r\n${
+      tracestate ? `tracestate: ${tracestate}\r\n` : ''
+    }`;
   };
   const getSessionContext = async () => {
     const result = await connection.execute(
@@ -1271,24 +1281,9 @@ describe('oracledb', () => {
         enableTraceContextPropagation: true,
       });
       resetConnectionAction();
-      //const result2 = await connection.execute('alter session set sql_trace=true');
-      //console.log(result2);
       memoryExporter.reset();
-      /*if (supportsAppContext) {
-        const existingTraceContext =
-          'traceparent: 00-78e1dd49763c1f048852ab0d7d61b906-509de95f8cabb61e-01';
-        await connection.execute(
-          `BEGIN
-             DBMS_SESSION.SET_CONTEXT('CLIENTCONTEXT', :attr, :val);
-           END;`,
-          {
-            attr: 'ora$opentelem$tracectx',
-            val: existingTraceContext,
-          }
-        );
-      }*/
 
-        await connection.execute('select user from dual');
+      await connection.execute('select user from dual');
       const result = await connection.execute(
         `SELECT SYS_CONTEXT('CLIENTCONTEXT', :attr) AS ctx_val FROM dual`,
         { attr: 'ora$opentelem$tracectx' },
@@ -1337,6 +1332,30 @@ describe('oracledb', () => {
         );
       }
       assert.ok(!action, 'connection.action should remain unset');
+    });
+
+    it('should clear client context before executing when trace context propagation is disabled', async function () {
+      if (!supportsAppContext) {
+        this.skip();
+      }
+      instrumentation.setConfig({
+        propagateTraceContextToSessionAction: false,
+        enableTraceContextPropagation: true,
+      });
+      resetConnectionAction();
+      await connection.execute('select user from dual');
+
+      instrumentation.setConfig({
+        propagateTraceContextToSessionAction: false,
+        enableTraceContextPropagation: false,
+      });
+      await connection.execute('select user from dual');
+
+      const { traceContext } = await getSessionContext();
+      assert.ok(
+        !traceContext,
+        'CLIENTCONTEXT should not retain a trace context from an earlier execution'
+      );
     });
 
     it('should not fail execute when client context propagation throws', async () => {
