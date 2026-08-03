@@ -489,6 +489,7 @@ export function getOracleTelemetryTraceHandlerClass(
                     }`,
                   },
                 ]);
+                traceContext.userContext.clientTraceContextSet = true;
               } catch (err) {
                 diag.debug(
                   'Failed to set connection.appContext for trace propagation',
@@ -499,6 +500,7 @@ export function getOracleTelemetryTraceHandlerClass(
             if (shouldSetConnectionAction && 'action' in connection) {
               try {
                 connection.action = traceparent;
+                traceContext.userContext.connectionActionSet = true;
               } catch (err) {
                 diag.debug(
                   'Failed to set connection.action for trace propagation',
@@ -534,10 +536,25 @@ export function getOracleTelemetryTraceHandlerClass(
         traceContext.operation === SpanNames.EXECUTE ||
         traceContext.operation === SpanNames.EXECUTE_MANY
       ) {
-        this._setConnectionTracingFlag(
-          traceContext.additionalConfig?.self,
-          false
-        );
+        const connection = traceContext.additionalConfig?.self;
+        if (traceContext.userContext.clientTraceContextSet) {
+          this._clearClientTraceContext(connection);
+        }
+        if (
+          traceContext.userContext.connectionActionSet &&
+          connection &&
+          'action' in connection
+        ) {
+          try {
+            connection.action = '';
+          } catch (err) {
+            diag.debug(
+              'Failed to clear connection.action for trace propagation',
+              err
+            );
+          }
+        }
+        this._setConnectionTracingFlag(connection, false);
       }
       this._updateFinalSpanAttributes(traceContext);
       switch (traceContext.operation) {

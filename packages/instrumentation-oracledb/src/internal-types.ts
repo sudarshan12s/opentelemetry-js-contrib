@@ -14,6 +14,8 @@ export interface InstrumentationContext {
   span: api.Span;
   traceParent?: string;
   traceState?: string;
+  clientTraceContextSet?: boolean;
+  connectionActionSet?: boolean;
 }
 
 // Captures the entire span data.

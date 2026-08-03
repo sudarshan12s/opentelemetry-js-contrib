@@ -1339,7 +1339,7 @@ describe('oracledb', () => {
         this.skip();
       }
       instrumentation.setConfig({
-        propagateTraceContextToSessionAction: false,
+        propagateTraceContextToSessionAction: true,
         enableTraceContextPropagation: true,
       });
       resetConnectionAction();
@@ -1351,10 +1351,14 @@ describe('oracledb', () => {
       });
       await connection.execute('select user from dual');
 
-      const { traceContext } = await getSessionContext();
+      const { action, traceContext } = await getSessionContext();
       assert.ok(
         !traceContext,
         'CLIENTCONTEXT should not retain a trace context from an earlier execution'
+      );
+      assert.ok(
+        !action,
+        'connection.action should not retain a trace context from an earlier execution'
       );
     });
 
