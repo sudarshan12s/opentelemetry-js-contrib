@@ -94,6 +94,7 @@ export function getOracleTelemetryTraceHandlerClass(
   class OracleTelemetryTraceHandler extends traceHandlerBase {
     private _getTracer: () => Tracer;
     private _instrumentConfig: OracleInstrumentationConfig;
+    private _hasLoggedMissingAppContext = false;
 
     constructor(getTracer: () => Tracer, config: OracleInstrumentationConfig) {
       super();
@@ -106,6 +107,71 @@ export function getOracleTelemetryTraceHandlerClass(
         this._instrumentConfig.requireParentSpan === true &&
         trace.getSpan(context.active()) === undefined
       );
+    }
+
+    private _shouldPropagateTraceContext(): boolean {
+      return this._instrumentConfig.enableTraceContextPropagation === true;
+    }
+
+    private _canUseAppContext(connection: unknown): connection is {
+      appContext: (name: string, entries: Record<string, string>[]) => void;
+    } {
+      const hasAppContext =
+        typeof (connection as any)?.appContext === 'function';
+      if (
+        !hasAppContext &&
+        this._instrumentConfig.enableTraceContextPropagation &&
+        !this._hasLoggedMissingAppContext
+      ) {
+        diag.warn(
+          'Oracle connection does not expose appContext; CLIENTCONTEXT trace propagation is disabled.'
+        );
+        this._hasLoggedMissingAppContext = true;
+      }
+      return hasAppContext;
+    }
+
+    private _setConnectionTracingFlag(
+      connection: unknown,
+      enabled: boolean
+    ): void {
+      if (
+        !connection ||
+        !('databaseOpenTelemetryTracing' in (connection as object))
+      ) {
+        return;
+      }
+      try {
+        (
+          connection as { databaseOpenTelemetryTracing: boolean }
+        ).databaseOpenTelemetryTracing = enabled;
+      } catch (err) {
+        diag.debug(
+          'Failed to set connection.databaseOpenTelemetryTracing for trace propagation',
+          err
+        );
+      }
+    }
+
+    private _clearClientTraceContext(connection: unknown): void {
+      if (typeof (connection as any)?.appContext !== 'function') {
+        return;
+      }
+      try {
+        (
+          connection as {
+            appContext: (
+              name: string,
+              entries: Record<string, string>[]
+            ) => void;
+          }
+        ).appContext('CLIENTCONTEXT', [{ ora$opentelem$tracectx: '' }]);
+      } catch (err) {
+        diag.debug(
+          'Failed to clear connection.appContext for trace propagation',
+          err
+        );
+      }
     }
 
     // Returns the connection related Attributes for
@@ -356,12 +422,21 @@ export function getOracleTelemetryTraceHandlerClass(
 
     setInstrumentConfig(config: OracleInstrumentationConfig = {}) {
       this._instrumentConfig = config;
+      this._hasLoggedMissingAppContext = false;
     }
 
     // This method is invoked before calling an exported function
     // from oracledb module.
     onEnterFn(traceContext: TraceSpanData) {
       if (this._shouldSkipInstrumentation()) {
+        if (
+          traceContext.operation === SpanNames.EXECUTE ||
+          traceContext.operation === SpanNames.EXECUTE_MANY
+        ) {
+          const connection = traceContext.additionalConfig?.self;
+          this._clearClientTraceContext(connection);
+          this._setConnectionTracingFlag(connection, false);
+        }
         return;
       }
 
@@ -369,6 +444,9 @@ export function getOracleTelemetryTraceHandlerClass(
       const spanAttributes = traceContext.connectLevelConfig
         ? this._getConnectionSpanAttributes(traceContext.connectLevelConfig)
         : {};
+      const shouldPropagateTraceContext = this._shouldPropagateTraceContext();
+      const shouldSetConnectionAction =
+        this._instrumentConfig.propagateTraceContextToSessionAction === true;
 
       traceContext.userContext = {
         span: this._getTracer().startSpan(spanName, {
@@ -378,23 +456,57 @@ export function getOracleTelemetryTraceHandlerClass(
       };
 
       if (traceContext.fn) {
+        const isExecuteOperation =
+          traceContext.operation === SpanNames.EXECUTE ||
+          traceContext.operation === SpanNames.EXECUTE_MANY;
+        const connection = traceContext.additionalConfig?.self;
+        if (isExecuteOperation && !shouldPropagateTraceContext) {
+          this._clearClientTraceContext(connection);
+          this._setConnectionTracingFlag(connection, false);
+        }
         if (
-          this._instrumentConfig.propagateTraceContextToSessionAction &&
-          (traceContext.operation === SpanNames.EXECUTE ||
-            traceContext.operation === SpanNames.EXECUTE_MANY)
+          (shouldPropagateTraceContext || shouldSetConnectionAction) &&
+          isExecuteOperation
         ) {
-          const connection = traceContext.additionalConfig?.self;
-          const traceparent = buildTraceparent(
-            traceContext.userContext.span.spanContext()
-          );
-          if (connection && 'action' in connection && traceparent) {
-            try {
-              connection.action = traceparent;
-            } catch (err) {
-              diag.debug(
-                'Failed to set connection.action for trace propagation',
-                err
-              );
+          const spanContext = traceContext.userContext.span.spanContext();
+          const traceparent = buildTraceparent(spanContext);
+          const tracestate = spanContext.traceState?.serialize() ?? '';
+
+          if (connection && traceparent) {
+            this._setConnectionTracingFlag(
+              connection,
+              shouldPropagateTraceContext
+            );
+            if (
+              shouldPropagateTraceContext &&
+              this._canUseAppContext(connection)
+            ) {
+              try {
+                connection.appContext('CLIENTCONTEXT', [
+                  {
+                    ora$opentelem$tracectx: `traceparent: ${traceparent}\r\n${
+                      tracestate ? `tracestate: ${tracestate}\r\n` : ''
+                    }`,
+                  },
+                ]);
+                traceContext.userContext.clientTraceContextSet = true;
+              } catch (err) {
+                diag.debug(
+                  'Failed to set connection.appContext for trace propagation',
+                  err
+                );
+              }
+            }
+            if (shouldSetConnectionAction && 'action' in connection) {
+              try {
+                connection.action = traceparent;
+                traceContext.userContext.connectionActionSet = true;
+              } catch (err) {
+                diag.debug(
+                  'Failed to set connection.action for trace propagation',
+                  err
+                );
+              }
             }
           }
         }
@@ -419,6 +531,30 @@ export function getOracleTelemetryTraceHandlerClass(
     onExitFn(traceContext: TraceSpanData) {
       if (!traceContext.userContext?.span) {
         return;
+      }
+      if (
+        traceContext.operation === SpanNames.EXECUTE ||
+        traceContext.operation === SpanNames.EXECUTE_MANY
+      ) {
+        const connection = traceContext.additionalConfig?.self;
+        if (traceContext.userContext.clientTraceContextSet) {
+          this._clearClientTraceContext(connection);
+        }
+        if (
+          traceContext.userContext.connectionActionSet &&
+          connection &&
+          'action' in connection
+        ) {
+          try {
+            connection.action = '';
+          } catch (err) {
+            diag.debug(
+              'Failed to clear connection.action for trace propagation',
+              err
+            );
+          }
+        }
+        this._setConnectionTracingFlag(connection, false);
       }
       this._updateFinalSpanAttributes(traceContext);
       switch (traceContext.operation) {
@@ -449,6 +585,15 @@ export function getOracleTelemetryTraceHandlerClass(
           attributes: spanAttrs,
         }),
       };
+      if (this._shouldPropagateTraceContext()) {
+        const spanContext = traceContext.userContext.span.spanContext();
+        const traceparent = buildTraceparent(spanContext);
+        if (traceparent) {
+          traceContext.userContext.traceParent = traceparent;
+          traceContext.userContext.traceState =
+            spanContext.traceState?.serialize() ?? '';
+        }
+      }
     }
 
     // This method is invoked after a round trip call to DB is done
